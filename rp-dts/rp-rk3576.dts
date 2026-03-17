@@ -1,0 +1,324 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2024 Rongpin Electronics Co., Ltd.
+ *
+ */
+/dts-v1/;
+#define RP_RK3576
+#include <dt-bindings/gpio/nca9555-gpio.h>
+
+#include "rp-rk3576-board.dtsi"
+
+#include "rp-audio-es8338.dtsi"
+#include "rp-gmac0-1000m.dtsi"
+#include "rp-gmac1-1000m.dtsi"
+
+// pcie1 and usb3-host1 cannot be used at the same time.
+//#include "rp-pcie1.dtsi"
+#include "rp-usb3.0-host1-typeA.dtsi"
+
+#include "rp-usb3.0-otg0-typeA.dtsi"
+#include "rp-wifibt-pcie0-ap6275p.dtsi"
+
+
+#include "rp-lcd-hdmi.dtsi"
+
+//#include "rp-lcd-test-ahd-hdmi.dtsi"
+//#include "rp-lcd-mipi0-5-720-1280-lcdm009-lcdm017.dtsi"
+//#include "rp-lcd-mipi0-5-720-1280-lcdm009x-lcdm017x.dtsi"
+//#include "rp-lcd-mipi0-5-720-1280-lcdm026.dtsi"
+//#include "rp-lcd-mipi0-5-720-1280-lcdm008.dtsi"
+//#include "rp-lcd-mipi0-5.5-720-1280-lcdm013-lcdm042.dtsi"
+//#include "rp-lcd-mipi0-5.5-720-1280-lcdm013x-lcdm042x.dtsi"
+//#include "rp-lcd-mipi0-7-720-1280-lcdm027-lcdm047.dtsi"
+//#include "rp-lcd-mipi0-7-1024-600-lcdm012-lcdm020-lcdm021.dtsi"
+//#include "rp-lcd-mipi0-7-1200-1920-lcdm014.dtsi"
+//#include "rp-lcd-mipi0-8-800-1280-lcdm015-lcdm044.dtsi"
+//#include "rp-lcd-mipi0-8-800-1280-lcdm028-lcdm048.dtsi"
+//#include "rp-lcd-mipi0-8-800-1280-lcdm028T-lcdm048T.dtsi"
+//#include "rp-lcd-mipi0-8-1200-1920-lcdm035-lcdm052.dtsi"
+//#include "rp-lcd-mipi0-8-1200-1920-lcdm035T-lcdm052T.dtsi"
+//#include "rp-lcd-mipi0-10-800-1280-lcdm016-lcdm045.dtsi"
+//#include "rp-lcd-mipi0-10-800-1280-lcdm036-lcdm049.dtsi"
+//#include "rp-lcd-mipi0-10-800-1280-lcdm036T-lcdm049T.dtsi"
+//#include "rp-lcd-mipi0-10-1200-1920-lcdm029-lcdm053.dtsi"
+//#include "rp-lcd-mipi0-10-1200-1920-lcdm029T-lcdm053T.dtsi"
+//#include "rp-lcd-mipi0-10-1920-1200-lcdm019.dtsi"
+//#include "rp-lcd-mipi0-10-1920-1200-lcdm051-lcdm054.dtsi"
+//#include "rp-lcd-mipi0-10-1920-1200-lcdm051TR-lcdm054TR.dtsi"
+//#include "rp-lcd-mipi0-10-1920-1200-lcdm006.dtsi"
+//#include "rp-lcd-mipi0-10-1920-1200-lcdm007.dtsi"
+//#include "rp-lcd-mipi2lvds-gm8775-10.1-1024-600-gm2lvds1024600.dtsi"
+//#include "rp-lcd-mipi2lvds-gm8775-10.1-1280-800-gm2lvds1280800.dtsi"
+//#include "rp-lcd-mipi2lvds-gm8775-24-1920-1080-gm2lvds19201080.dtsi"
+
+
+//#ifdef RK3576_AHD
+//#include "rp-camera-dcphy0-mipi-ahd.dtsi"
+//#include "rp-camera-dphy0-mipi-ahd.dtsi"
+//#include "rp-camera-dphy3-mipi-ahd.dtsi"
+//#else
+//#include "rp-camera-mipi-csi0.dtsi"
+//#include "rp-camera-mipi-csi1.dtsi"
+//#include "rp-camera-mipi-csi3.dtsi"
+//#endif
+
+
+/ {
+    model = "rp-rk3576";
+    //model = "FriendlyElec NanoPi M5";
+	//compatible = "friendlyelec,nanopi-m5", "rockchip,rk3576";
+	
+    /delete-node/ chosen;
+	
+    pwr_3v3_5v: pwr-3v3-5v {
+        compatible = "regulator-fixed";
+        regulator-name = "pwr_3v3_5v";
+        regulator-boot-on;
+        regulator-always-on;
+        enable-active-high;
+        gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+        vin-supply = <&vcc_3v3_s0>;
+    };
+
+    vcc5v0_host: vcc5v0-host {
+        compatible = "regulator-fixed";
+        regulator-name = "vcc5v0_host";
+        regulator-boot-on;
+        regulator-always-on;
+        regulator-min-microvolt = <5000000>;
+        regulator-max-microvolt = <5000000>;
+        enable-active-high;
+        gpio = <&gpio0 RK_PD2 GPIO_ACTIVE_HIGH>;
+        vin-supply = <&vcc5v0_device>;
+    };
+    
+    fan_gpio_control {
+        compatible = "fan_gpio_control";
+        gpio-pin = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
+        temperature-device = "soc-thermal";
+        temp-on = <60000>;
+        time = <10000>;
+        status = "okay";
+    };
+
+    rp_power{
+        status = "okay";
+        compatible = "rp_power";
+        rp_not_deep_sleep = <1>;
+
+//#define GPIO_FUNCTION_OUTPUT 0
+//#define GPIO_FUNCTION_INPUT 1
+//#define GPIO_FUNCTION_IRQ 2
+//#define GPIO_FUNCTION_FLASH 3
+//#define GPIO_FUNCTION_OUTPUT_CTRL 4
+        led {  
+            gpio_num = <&gpio4 RK_PC7 GPIO_ACTIVE_HIGH>;
+            gpio_function = <3>;
+        };
+
+        usb-otg-power {  
+            gpio_num = <&gpio0 RK_PD3 GPIO_ACTIVE_HIGH>;
+            gpio_function = <4>;
+        };
+
+        usb-host-power {  
+            gpio_num = <&gpio0 RK_PD2 GPIO_ACTIVE_HIGH>;
+            gpio_function = <4>;
+        };
+
+        usb-hub-reset {  
+            gpio_num = <&gpio0 RK_PD1 GPIO_ACTIVE_LOW>;
+            gpio_function = <4>;
+        };
+        
+				vdd_4g {     
+            gpio_num = <&nca9555_gpio IO_06 GPIO_ACTIVE_HIGH>;
+            gpio_function = <4>;
+		    };
+				4g_reset {     
+            gpio_num = <&nca9555_gpio IO_07 GPIO_ACTIVE_HIGH>;
+            gpio_function = <4>;
+		    };
+             nvme_power {
+            gpio_num = <&nca9555_gpio IO_10 GPIO_ACTIVE_HIGH>;
+            gpio_function = <4>;
+                    };
+    };
+
+    rp_gpio{
+        status = "okay";
+        compatible = "rp_gpio";
+//	pinctrl-names= "default";
+//	pinctrl-0 = <&rp_gpio_pins>;
+				IO11 {     
+            gpio_num = <&nca9555_gpio IO_11 GPIO_ACTIVE_LOW>;
+            gpio_function = <4>;
+		    };
+		    
+				IO12 {     
+            gpio_num = <&nca9555_gpio IO_12 GPIO_ACTIVE_LOW>;
+            gpio_function = <4>;
+		    };
+		    
+				IO13 {     
+            gpio_num = <&nca9555_gpio IO_13 GPIO_ACTIVE_LOW>;
+            gpio_function = <4>;
+		    };
+		    
+				IO14 {     
+            gpio_num = <&nca9555_gpio IO_14 GPIO_ACTIVE_LOW>;
+            gpio_function = <4>;
+		    };
+		    
+				IO15 {     
+            gpio_num = <&nca9555_gpio IO_15 GPIO_ACTIVE_LOW>;
+            gpio_function = <4>;
+		    };
+		    
+				IO16 {     
+            gpio_num = <&nca9555_gpio IO_16 GPIO_ACTIVE_LOW>;
+            gpio_function = <4>;
+		    };
+		    
+				IO17 {     
+            gpio_num = <&nca9555_gpio IO_17 GPIO_ACTIVE_LOW>;
+            gpio_function = <4>;
+		    };
+    };
+};
+
+&i2c2 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c2m0_xfer>;
+
+    hym8563: hym8563@51 {
+        compatible = "haoyu,hym8563";
+        reg = <0x51>;
+        #clock-cells = <0>;
+        clock-frequency = <32768>;
+        clock-output-names = "hym8563-32k";
+    };
+    
+    nca9555: mfd-gpio@20 {
+        compatible = "nca9555";
+        reg = <0x20>;
+        status = "okay";
+
+        nca9555_gpio: gpio-normal@20 {
+            compatible = "nca9555-gpio";
+            gpio-controller;
+            #gpio-cells = <2>;
+        };
+    };
+};
+
+//RS-232
+&uart1 {
+    status = "okay";
+    dmas = <&dmac0 8>, <&dmac0 9>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&uart1m1_xfer>;
+};
+
+//RS-232
+&uart2 {
+    status = "okay";
+    dmas = <&dmac0 10>, <&dmac0 11>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&uart2m2_xfer>;
+};
+
+//TTL
+&uart3 {
+    status = "okay";
+    dmas = <&dmac0 12>, <&dmac0 13>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&uart3m0_xfer>;
+};
+
+/* uart4 enable in wifibt dtsi */
+
+//TTL
+&uart5 {
+    status = "okay";
+    dmas = <&dmac1 11>, <&dmac1 12>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&uart5m0_xfer>;
+};
+
+//TTL
+&uart6 {
+    status = "okay";
+    dmas = <&dmac1 13>, <&dmac1 14>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&uart6m3_xfer>;
+};
+
+//TTL
+&uart7 {
+    status = "okay";
+    dmas = <&dmac2 6>, <&dmac2 7>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&uart7m0_xfer>;
+};
+
+// RS485
+&uart8 {
+    status = "okay";
+    dmas = <&dmac2 8>, <&dmac2 9>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&uart8m1_xfer>;
+};
+
+&can0 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&can0m2_pins>;
+};
+
+&can1 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&can1m3_pins>;
+};
+
+&i2c5 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c5m3_xfer>;
+};
+
+&spi1 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&spi1m2_csn0 &spi1m2_pins>;
+    spi1_dev@0 {
+        compatible = "rockchip,spidev";
+        reg = <0>;
+        spi-max-frequency = <12000000>;
+        spi-lsb-first;
+    };
+};
+
+&spi4 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&spi4m3_csn0 &spi4m3_pins>;
+    spi4_dev@0 {
+        compatible = "rockchip,spidev";
+        reg = <0>;
+        spi-max-frequency = <12000000>;
+        spi-lsb-first;
+    };
+};
+
+&hdmi{
+    /* rp-rk3576 hardware not connect this */
+    /delete-property/enable-gpios;
+};
+
+&hdmi_sound { 
+    status = "disabled"; 
+};

@@ -1,0 +1,22 @@
+&combphy1_psu {
+    status = "okay";
+};
+
+// USB2.0 port is disabled when USB3.2 Gen1x1 disabled
+&usb_drd1_dwc3 {
+    dr_mode = "host";
+    status = "okay";
+};
+
+&php_grf {
+    status = "okay";
+};
+
+&u2phy1 {
+    status = "okay";
+};
+
+&u2phy1_otg {
+    status = "okay";
+    phy-supply = <&vcc5v0_host>;
+};

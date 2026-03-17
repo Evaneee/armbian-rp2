@@ -1,0 +1,366 @@
+
+/{
+    vcc_mipicsi0: vcc-mipicsi0-regulator {
+        compatible = "regulator-fixed";
+        regulator-name = "vcc_mipicsi0";
+        enable-active-high;
+    };
+
+    vcc_mipicsi1: vcc-mipicsi1-regulator {
+        compatible = "regulator-fixed";
+        regulator-name = "vcc_mipicsi1";
+        enable-active-high;
+    };
+
+    vcc_mipidcphy0: vcc-mipidcphy0-regulator {
+        compatible = "regulator-fixed";
+        regulator-name = "vcc_mipidcphy0";
+        enable-active-high;
+    };
+};
+
+&csi2_dcphy0 {
+    status = "okay";
+
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        port@0 {
+            reg = <0>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipi0_in_ucam0: endpoint@1 {
+                reg = <1>;
+                remote-endpoint = <&imx415_out0>;
+                data-lanes = <1 2 3 4>;
+            };
+
+            mipi0_in_ucam1: endpoint@2 {
+                reg = <2>;
+                remote-endpoint = <&imx464_out0>;
+                data-lanes = <1 2>;
+            };
+
+            mipi0_in_ucam2: endpoint@3 {
+                reg = <3>;
+                remote-endpoint = <&sc4336p_out0>;
+                data-lanes = <1 2>;
+            };
+
+            mipi0_in_ucam3: endpoint@4 {
+                reg = <4>;
+                remote-endpoint = <&os04a10_out0>;
+                data-lanes = <1 2>;
+            };
+
+            mipi0_in_ucam4: endpoint@5 {
+                reg = <5>;
+                remote-endpoint = <&gc05a2_out0>;
+                data-lanes = <1 2>;
+            };
+        };
+        port@1 {
+            reg = <1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            csidcphy0_out: endpoint@0 {
+                reg = <0>;
+                remote-endpoint = <&mipi0_csi2_input>;
+            };
+        };
+    };
+};
+
+&csi2_dphy0_hw {
+	status = "okay";
+};
+
+&csi2_dphy1_hw {
+	status = "okay";
+};
+
+
+&i2c6 {
+    status = "okay";
+    pinctrl-0 = <&i2c6m0_xfer>;
+
+    imx415_0: imx415_0@1a {
+        compatible = "sony,imx415";
+        status = "okay";
+        reg = <0x1a>;
+        clocks = <&cru CLK_MIPI_CAMERAOUT_M0>;
+        clock-names = "xvclk";
+        pinctrl-names = "default";
+        pinctrl-0 = <&cam_clk0m0_clk0>;
+        power-domains = <&power RK3576_PD_VI>;
+        avdd-supply = <&vcc_mipidcphy0>;
+        
+#if defined RP_RK3576S || defined PRO_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_LOW>;
+        power-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+        
+#elif defined  DR4_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_LOW>;
+        power-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+#elif defined  PRO_RK3576_MID
+        reset-gpios = <&gpio4 RK_PA6 GPIO_ACTIVE_LOW>;
+        power-gpios = <&gpio4 RK_PA4 GPIO_ACTIVE_HIGH>;
+#else  //rk3576
+				reset-gpios = <&nca9555_gpio IO_00 GPIO_ACTIVE_LOW>;
+        power-gpios = <&nca9555_gpio IO_01 GPIO_ACTIVE_HIGH>;
+#endif
+
+        rockchip,camera-module-index = <0>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "CMK-OT2022-PX1";
+        rockchip,camera-module-lens-name = "IR0147-50IRC-8M-F20";
+        port {
+            imx415_out0: endpoint {
+                remote-endpoint = <&mipi0_in_ucam0>;
+                data-lanes = <1 2 3 4>;
+            };
+        };
+    };
+
+    gc05a2_0: gc05a2_0@37 {
+        compatible = "galaxycore,gc05a2";
+        status = "okay";
+        reg = <0x37>;
+        clocks = <&cru CLK_MIPI_CAMERAOUT_M0>;
+        clock-names = "xvclk";
+        pinctrl-names = "default";
+        pinctrl-0 = <&cam_clk0m0_clk0>;
+        power-domains = <&power RK3576_PD_VI>;
+        avdd-supply = <&vcc_mipidcphy0>;
+        
+#if defined RP_RK3576S || defined PRO_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+        
+#elif defined  DR4_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+#elif defined  PRO_RK3576_MID
+        reset-gpios = <&gpio4 RK_PA6 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio4 RK_PA4 GPIO_ACTIVE_HIGH>;
+#else  //rk3576
+				reset-gpios = <&nca9555_gpio IO_00 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&nca9555_gpio IO_01 GPIO_ACTIVE_HIGH>;
+#endif
+
+        rockchip,camera-module-index = <0>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "KYT-11210-V2";
+        rockchip,camera-module-lens-name = "default";
+        port {
+            gc05a2_out0: endpoint {
+                remote-endpoint = <&mipi0_in_ucam4>;
+                data-lanes = <1 2>;
+            };
+        };
+    };
+
+
+    imx464_0: imx464_0@1a {
+        compatible = "sony,imx464";
+        status = "okay";
+        reg = <0x1a>;
+        clocks = <&cru CLK_MIPI_CAMERAOUT_M0>;
+        clock-names = "xvclk";
+        pinctrl-names = "default";
+        pinctrl-0 = <&cam_clk0m0_clk0>;
+        power-domains = <&power RK3576_PD_VI>;
+        avdd-supply = <&vcc_mipidcphy0>;
+        
+#if defined RP_RK3576S || defined PRO_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+#elif defined  DR4_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+#elif defined  PRO_RK3576_MID
+        reset-gpios = <&gpio4 RK_PA6 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio4 RK_PA4 GPIO_ACTIVE_HIGH>;
+#else  //rk3576
+				reset-gpios = <&nca9555_gpio IO_00 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&nca9555_gpio IO_01 GPIO_ACTIVE_HIGH>;
+#endif
+
+        rockchip,camera-module-index = <0>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "CMK-OT1980-PX1";
+        rockchip,camera-module-lens-name = "SHG102";
+        port {
+            imx464_out0: endpoint {
+                remote-endpoint = <&mipi0_in_ucam1>;
+                data-lanes = <1 2>;
+            };
+        };
+    };
+
+    sc4336p_0: sc4336p_0@30 {
+        compatible = "smartsens,sc4336p";
+        status = "okay";
+        reg = <0x30>;
+        clocks = <&cru CLK_MIPI_CAMERAOUT_M0>;
+        clock-names = "xvclk";
+        pinctrl-names = "default";
+        pinctrl-0 = <&cam_clk0m0_clk0>;
+        power-domains = <&power RK3576_PD_VI>;
+        avdd-supply = <&vcc_mipidcphy0>;
+        
+#if defined RP_RK3576S || defined PRO_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+        
+#elif defined  DR4_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+#elif defined  PRO_RK3576_MID
+        reset-gpios = <&gpio4 RK_PA6 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio4 RK_PA4 GPIO_ACTIVE_HIGH>;
+#else  //rk3576
+				reset-gpios = <&nca9555_gpio IO_00 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&nca9555_gpio IO_01 GPIO_ACTIVE_HIGH>;
+#endif
+
+        rockchip,camera-module-index = <0>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "OT01";
+        rockchip,camera-module-lens-name = "40IRC_F16";
+        port {
+            sc4336p_out0: endpoint {
+                remote-endpoint = <&mipi0_in_ucam2>;
+                data-lanes = <1 2>;
+            };
+        };
+    };
+
+
+    os04a10_0: os04a10_0@36 {
+        compatible = "ovti,os04a10";
+        status = "okay";
+        reg = <0x36>;
+        clocks = <&cru CLK_MIPI_CAMERAOUT_M0>;
+        clock-names = "xvclk";
+        pinctrl-names = "default";
+        pinctrl-0 = <&cam_clk0m0_clk0>;
+        power-domains = <&power RK3576_PD_VI>;
+        avdd-supply = <&vcc_mipidcphy0>;
+       
+        
+#if defined RP_RK3576S || defined PRO_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_LOW>;
+        pwdn-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+        
+#elif defined  DR4_RK3576X
+        reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_LOW>;
+        pwdn-gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_HIGH>;
+#elif defined  PRO_RK3576_MID
+        reset-gpios = <&gpio4 RK_PA6 GPIO_ACTIVE_LOW>;
+        pwdn-gpios = <&gpio4 RK_PA4 GPIO_ACTIVE_HIGH>;
+#else  //rk3576
+				reset-gpios = <&nca9555_gpio IO_00 GPIO_ACTIVE_LOW>;
+        pwdn-gpios = <&nca9555_gpio IO_01 GPIO_ACTIVE_HIGH>;
+#endif
+
+        rockchip,camera-module-index = <0>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "CMK-OT1607-FV1";
+        rockchip,camera-module-lens-name = "M12-40IRC-4MP-F16";
+        port {
+            os04a10_out0: endpoint {
+                remote-endpoint = <&mipi0_in_ucam3>;
+                data-lanes = <1 2>;
+            };
+        };
+    };
+
+};
+
+&mipi0_csi2 {
+    status = "okay";
+
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        port@0 {
+            reg = <0>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipi0_csi2_input: endpoint@1 {
+                reg = <1>;
+                remote-endpoint = <&csidcphy0_out>;
+            };
+        };
+
+        port@1 {
+            reg = <1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipi0_csi2_output: endpoint@0 {
+                reg = <0>;
+                remote-endpoint = <&cif_mipi_in0>;
+            };
+        };
+    };
+};
+
+&rkcif {
+    status = "okay";
+};
+
+&rkcif_mipi_lvds {
+    status = "okay";
+
+    port {
+        cif_mipi_in0: endpoint {
+            remote-endpoint = <&mipi0_csi2_output>;
+        };
+    };
+};
+
+&rkcif_mipi_lvds_sditf {
+    status = "okay";
+
+    port {
+        mipi_lvds_sditf: endpoint {
+            remote-endpoint = <&isp_vir0_in0>;
+        };
+    };
+};
+
+&rkcif_mmu {
+    status = "okay";
+};
+
+&rkisp {
+    status = "okay";
+};
+
+&rkisp_mmu {
+    status = "okay";
+};
+
+&rkisp_vir0 {
+    status = "okay";
+
+    port {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        isp_vir0_in0: endpoint@0 {
+            reg = <0>;
+            remote-endpoint = <&mipi_lvds_sditf>;
+        };
+    };
+};
+
+&rkisp_vir0_sditf {
+    status = "okay";
+};

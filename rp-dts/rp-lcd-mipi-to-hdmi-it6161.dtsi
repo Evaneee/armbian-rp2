@@ -1,0 +1,78 @@
+&dsi {
+    status = "okay";
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        port@1 {
+            reg = <1>;
+            dsi_out_panel: endpoint {
+                remote-endpoint = <&panel_in_dsi>;
+            };
+        };
+    };
+
+};
+
+&route_dsi {
+    status = "disabled";
+};
+
+&dsi_in_vp0 {
+    status = "disabled";
+};
+
+&dsi_in_vp1 {
+    status = "okay";
+};
+
+&dsi_in_vp2 {
+    status = "disabled";
+};
+
+&dsi_in_vopl {
+    status = "disabled";
+};
+
+&i2c0 {
+    status = "okay";
+    pinctrl-names = "default";  
+    pinctrl-0 = <&i2c0m1_xfer>;
+
+    it6161: it6161@6c {
+        status = "okay";
+        compatible = "ite,it6161";
+        pinctrl-names = "default";  
+        pinctrl-0 = <&it6161_int_pins &it6161_enable_pins>;
+        #sound-dai-cells = <0>;
+        reg = <0x6c>;
+        it6161-addr-hdmi-tx = <0x4C>;
+        it6161-addr-cec = <0x4E>;
+        interrupt-parent = <&gpio0>;
+        interrupts = <RK_PD0 IRQ_TYPE_LEVEL_HIGH>;
+        enable-gpios = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
+        
+        ports {
+            #address-cells = <1>;
+            #size-cells = <0>;
+            port@0 {
+                reg = <0>;
+                panel_in_dsi: endpoint {
+                remote-endpoint = <&dsi_out_panel>;
+                };
+            };
+        };
+    };
+};
+
+&pinctrl {
+    it6161-pin-group {
+        it6161_int_pins: it6161_int_pins {
+            rockchip,pins =<0 RK_PD0 RK_FUNC_GPIO &pcfg_pull_none>;
+        };
+        it6161_enable_pins: it6161_enable_pins {
+            rockchip,pins =<0 RK_PC6 RK_FUNC_GPIO &pcfg_pull_up>;
+        };
+    };
+};
+

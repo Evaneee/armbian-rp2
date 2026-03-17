@@ -1,0 +1,39 @@
+
+#define RK3576_AHD
+
+/{
+    hdmi_sound: hdmi-sound {
+        compatible = "rockchip,hdmi";
+        rockchip,mclk-fs = <128>;
+        rockchip,card-name = "rockchip-hdmi";
+        rockchip,cpu = <&sai6>;
+        rockchip,codec = <&hdmi>;
+        rockchip,jack-det;
+    };
+};
+
+&hdmi {
+    status = "okay";
+#if defined  PRO_BOX_RK3576
+#else    
+    enable-gpios = <&gpio4 RK_PC6 GPIO_ACTIVE_HIGH>;
+#endif
+    rockchip,sda-falling-delay-ns = <360>;
+};
+
+&hdmi_in_vp0 {
+    status = "okay";
+};
+
+&hdptxphy_hdmi {
+    status = "okay";
+};
+
+&sai6 {
+    status = "okay";
+};
+
+&route_hdmi {
+    status = "okay";
+    connect = <&vp0_out_hdmi>;
+};

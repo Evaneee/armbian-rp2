@@ -1,0 +1,119 @@
+/{
+    es8388_sound: es8388-sound {
+        status = "okay";
+        compatible = "rockchip,multicodecs-card";
+        rockchip,card-name = "rockchip-es8388";
+
+#if defined DR4_RK3576X
+        spk-mute-gpio = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
+        hp-det-gpio = <&gpio4 RK_PB0 GPIO_ACTIVE_LOW>;
+#elif defined  PRO_RK3576_MID
+				spk-mute-gpio = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
+        hp-det-gpio = <&gpio4 RK_PB0 GPIO_ACTIVE_LOW>;
+        rp-amp-level = <2>;//1 2 3 level choice, only for AW8733 amplifier
+#elif defined  PRO_BOX_RK3576
+        spk-con-gpio = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
+        spk-mute-gpio = <&gpio0 RK_PC4 GPIO_ACTIVE_LOW>;
+//        hp-det-gpio = <&gpio4 RK_PB0 GPIO_ACTIVE_LOW>;
+#else
+        spk-con-gpio = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
+        spk-mute-gpio = <&gpio0 RK_PC4 GPIO_ACTIVE_LOW>;
+        hp-det-gpio = <&gpio4 RK_PB0 GPIO_ACTIVE_LOW>;
+#endif
+
+        // hp-con-gpio = <&gpio3 RK_PD6 GPIO_ACTIVE_HIGH>;
+        rockchip,format = "i2s";
+        rockchip,mclk-fs = <256>;
+        rockchip,cpu = <&sai1>;
+        rockchip,codec = <&es8388>;
+        rockchip,audio-routing =
+            "Headphone", "LOUT1",
+            "Headphone", "ROUT1",
+            "Speaker", "LOUT2",
+            "Speaker", "ROUT2",
+            "Headphone", "Headphone Power",
+            "Headphone", "Headphone Power",
+            "Speaker", "Speaker Power",
+            "Speaker", "Speaker Power",
+            "LINPUT1", "Main Mic",
+            "LINPUT2", "Main Mic",
+            "RINPUT1", "Headset Mic",
+            "RINPUT2", "Headset Mic";
+        pinctrl-names = "default";
+        pinctrl-0 = <&hp_det>;
+        play-pause-key {
+            label = "playpause";
+            linux,code = <KEY_PLAYPAUSE>;
+            press-threshold-microvolt = <2000>;
+        };
+    };    
+};
+
+&sai1 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&sai1m0_lrck
+             &sai1m0_sclk
+             &sai1m0_sdi0
+             &sai1m0_sdo0>;
+};
+
+#if defined DR4_RK3576X
+&i2c2 {
+#else
+&i2c3 {
+#endif
+    status = "okay";
+    es8388: es8388@10 {
+        status = "okay";
+        #sound-dai-cells = <0>;
+        compatible = "everest,es8388", "everest,es8323";
+        reg = <0x10>;
+        clocks = <&mclkout_sai1>;
+        clock-names = "mclk";
+        assigned-clocks = <&mclkout_sai1>;
+        assigned-clock-rates = <12288000>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&sai1m0_mclk>;
+    };
+};
+
+&pinctrl {
+    headphone {
+        hp_det: hp-det {
+            rockchip,pins = <4 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>;
+        };
+    };    
+};
+
+&i2c3m0_xfer {
+	rockchip,pins =
+		<4 RK_PB5 11 &pcfg_pull_up_drv_level_15>,
+		<4 RK_PB4 11 &pcfg_pull_up_drv_level_15>;
+};
+
+
+&sai1m0_lrck {
+	rockchip,pins =
+		<4 RK_PA5 1 &pcfg_pull_up_drv_level_15>;
+};
+
+&sai1m0_mclk {
+	rockchip,pins =
+		<4 RK_PA2 1 &pcfg_pull_up_drv_level_15>;
+};
+
+&sai1m0_sclk {
+	rockchip,pins =
+		<4 RK_PA3 1 &pcfg_pull_up_drv_level_15>;
+};
+
+&sai1m0_sdi0 {
+	rockchip,pins =
+		<4 RK_PB3 1 &pcfg_pull_up_drv_level_15>;
+};
+
+&sai1m0_sdo0 {
+	rockchip,pins =
+		<4 RK_PA7 1 &pcfg_pull_up_drv_level_15>;
+};

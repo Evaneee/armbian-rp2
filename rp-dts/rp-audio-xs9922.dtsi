@@ -1,0 +1,30 @@
+&sai0 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <
+        &sai0m0_lrck
+        &sai0m0_sclk
+        &sai0m0_sdi0
+        &sai0m0_mclk
+    >;
+};
+
+/{
+    xs9922b_codec: dummy-codec {
+        status = "okay";
+        compatible = "rockchip,dummy-codec";
+        #sound-dai-cells = <0>;
+    };
+
+	xs9922b_sound: xs9922b-sound {
+        status = "okay";
+        compatible = "rockchip,multicodecs-card";
+        rockchip,card-name = "xs9922b-sound";
+        rockchip,frame-master = <&xs9922b_codec>;
+        rockchip,bitclock-master = <&xs9922b_codec>;
+        rockchip,format = "i2s";
+        rockchip,mclk-fs = <256>;
+        rockchip,cpu = <&sai0>;
+        rockchip,codec = <&xs9922b_codec>;
+	};
+};

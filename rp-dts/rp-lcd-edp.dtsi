@@ -1,0 +1,17 @@
+&edp {
+    status = "okay";
+	force-hpd;
+};
+
+&edp_in_vp0 {
+    status = "okay";
+};
+
+&hdptxphy{
+	status = "okay";
+};
+
+&route_edp {
+    status = "okay";
+    connect = <&vp0_out_edp>;
+};
