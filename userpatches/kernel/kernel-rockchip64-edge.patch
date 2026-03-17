@@ -1,0 +1,129 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Sat, 13 Sep 2025 17:32:00 +0800
+Subject: Patching kernel rockchip64 files arch/arm64/kernel/head.S
+ arch/arm64/kernel/sleep.S arch/arm64/mm/proc.S
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ arch/arm64/kernel/head.S  | 12 +++++-----
+ arch/arm64/kernel/sleep.S |  4 ++--
+ arch/arm64/mm/proc.S      |  6 ++---
+ 3 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/arch/arm64/kernel/head.S b/arch/arm64/kernel/head.S
+index ca04b338c..bfb368fd8 100644
+--- a/arch/arm64/kernel/head.S
++++ b/arch/arm64/kernel/head.S
+@@ -68,12 +68,12 @@
+ 	.quad	0				// reserved
+ 	.ascii	ARM64_IMAGE_MAGIC		// Magic number
+ 	.long	.Lpe_header_offset		// Offset to the PE header.
+ 
+ 	__EFI_PE_HEADER
+-
+-	.section ".idmap.text","a"
++//改过
++	.section ".idmap.text","awx"
+ 
+ 	/*
+ 	 * The following callee saved general purpose registers are used on the
+ 	 * primary lowlevel boot path:
+ 	 *
+@@ -247,13 +247,13 @@ SYM_FUNC_START_LOCAL(__primary_switched)
+ 	ASM_BUG()
+ SYM_FUNC_END(__primary_switched)
+ 
+ /*
+  * end early head section, begin head code that is also used for
+- * hotplug and needs to have the same protections as the text region
++ * hotplug and needs to have the same protections as the text region 改过----
+  */
+-	.section ".idmap.text","a"
++	.section ".idmap.text","awx"
+ 
+ /*
+  * Starting from EL2 or EL1, configure the CPU to execute at the highest
+  * reachable EL supported by the kernel in a chosen default state. If dropping
+  * from EL2 to EL1, configure EL2 before configuring EL1.
+@@ -451,13 +451,13 @@ SYM_FUNC_END(set_cpu_boot_mode_flag)
+  *
+  * Returns to the caller via x30/lr. This requires the caller to be covered
+  * by the .idmap.text section.
+  *
+  * Checks if the selected granule size is supported by the CPU.
+- * If it isn't, park the CPU
++ * If it isn't, park the CPU---改过
+  */
+-	.section ".idmap.text","a"
++	.section ".idmap.text","awx"
+ SYM_FUNC_START(__enable_mmu)
+ 	mrs	x3, ID_AA64MMFR0_EL1
+ 	ubfx	x3, x3, #ID_AA64MMFR0_EL1_TGRAN_SHIFT, 4
+ 	cmp     x3, #ID_AA64MMFR0_EL1_TGRAN_SUPPORTED_MIN
+ 	b.lt    __no_granule_support
+diff --git a/arch/arm64/kernel/sleep.S b/arch/arm64/kernel/sleep.S
+index f093cdf71..f4bc73ebd 100644
+--- a/arch/arm64/kernel/sleep.S
++++ b/arch/arm64/kernel/sleep.S
+@@ -94,12 +94,12 @@ SYM_FUNC_START(__cpu_suspend_enter)
+ 	bl	cpu_do_suspend
+ 	ldp	x29, lr, [sp], #16
+ 	mov	x0, #1
+ 	ret
+ SYM_FUNC_END(__cpu_suspend_enter)
+-
+-	.pushsection ".idmap.text", "a"
++//改过
++	.pushsection ".idmap.text", "awx"
+ SYM_CODE_START(cpu_resume)
+ 	mov	x0, xzr
+ 	bl	init_kernel_el
+ 	mov	x19, x0			// preserve boot mode
+ 	bl	__cpu_setup
+diff --git a/arch/arm64/mm/proc.S b/arch/arm64/mm/proc.S
+index 54dccfd6a..09bc10c33 100644
+--- a/arch/arm64/mm/proc.S
++++ b/arch/arm64/mm/proc.S
+@@ -155,11 +155,11 @@ alternative_else_nop_endif
+ 	isb
+ 	ret
+ SYM_FUNC_END(cpu_do_resume)
+ #endif
+ 
+-	.pushsection ".idmap.text", "a"
++	.pushsection ".idmap.text", "awx"
+ 
+ .macro	__idmap_cpu_set_reserved_ttbr1, tmp1, tmp2
+ 	adrp	\tmp1, reserved_pg_dir
+ 	phys_to_ttbr \tmp2, \tmp1
+ 	offset_ttbr1 \tmp2, \tmp1
+@@ -191,11 +191,11 @@ SYM_FUNC_ALIAS(__pi_idmap_cpu_replace_ttbr1, idmap_cpu_replace_ttbr1)
+ #ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+ 
+ #define KPTI_NG_PTE_FLAGS	(PTE_ATTRINDX(MT_NORMAL) | PTE_TYPE_PAGE | \
+ 				 PTE_AF | PTE_SHARED | PTE_UXN | PTE_WRITE)
+ 
+-	.pushsection ".idmap.text", "a"
++	.pushsection ".idmap.text", "awx"
+ 
+ 	.macro	pte_to_phys, phys, pte
+ 	and	\phys, \pte, #PTE_ADDR_LOW
+ #ifdef CONFIG_ARM64_PA_BITS_52
+ 	and	\pte, \pte, #PTE_ADDR_HIGH
+@@ -446,11 +446,11 @@ SYM_FUNC_END(idmap_kpti_install_ng_mappings)
+  *	Initialise the processor for turning the MMU on.
+  *
+  * Output:
+  *	Return in x0 the value of the SCTLR_EL1 register.
+  */
+-	.pushsection ".idmap.text", "a"
++	.pushsection ".idmap.text", "awx"
+ SYM_FUNC_START(__cpu_setup)
+ 	tlbi	vmalle1				// Invalidate local TLB
+ 	dsb	nsh
+ 
+ 	msr	cpacr_el1, xzr			// Reset cpacr_el1
+-- 
+Created with Armbian build tools https://github.com/armbian/build
+

@@ -1,0 +1,12 @@
+[Unit]
+Description=Enable usbdevice after first-login wizard
+After=multi-user.target
+ConditionPathExists=!/root/.not_logged_in_yet
+ConditionPathExists=/usr/lib/systemd/system/usbdevice.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/rp-rk3576j/usbdevice-postfirstlogin.sh
+
+[Install]
+WantedBy=multi-user.target
