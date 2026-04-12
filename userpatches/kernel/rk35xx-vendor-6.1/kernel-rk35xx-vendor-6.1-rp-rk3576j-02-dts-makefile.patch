@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: John Doe <john.doe@somewhere.on.planet>
+From: Evan <john.doe@somewhere.on.planet>
 Date: Wed, 4 Mar 2026 13:38:00 +0800
 Subject: Patching kernel rk35xx files arch/arm64/boot/dts/rockchip/Makefile
 
