@@ -1,8 +1,9 @@
-# Sochip(Allwinner) S3 integrated 128M RAM SoC
+# Allwinner S3 single core 128MB RAM SPI flash 100M Ethernet WiFi USB2 camera
 BOARD_NAME="Pine Cube"
 BOARD_VENDOR="pine64"
 BOARDFAMILY="sun8i-v3s"
 BOARD_MAINTAINER=""
+INTRODUCED="2020"
 KERNEL_TARGET="current,edge,legacy"
 KERNEL_TEST_TARGET="current"
 BOOTCONFIG="pinecube_defconfig"

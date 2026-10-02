@@ -1,8 +1,9 @@
-# Amlogic A311D 4GB RAM eMMC USB3 WiFi BT
+# Amlogic A311D hexa core 4GB RAM eMMC USB3 WiFi BT
 BOARD_NAME="Radxa Zero 2"
 BOARD_VENDOR="radxa"
 BOARDFAMILY="meson-g12b"
 BOARD_MAINTAINER=""
+INTRODUCED="2021"
 BOOTCONFIG="radxa-zero2_config"
 KERNEL_TARGET="current,edge"
 KERNEL_TEST_TARGET="current"

@@ -3,6 +3,7 @@ BOARD_NAME="CAINIAO CNIoT-CORE"
 BOARD_VENDOR="cainiao"
 BOARDFAMILY="meson-g12b"
 BOARD_MAINTAINER="retro98boy"
+INTRODUCED="2024"
 BOOTCONFIG="cainiao-cniot-core_defconfig"
 KERNEL_TARGET="current,edge"
 KERNEL_TEST_TARGET="current"
@@ -46,9 +47,7 @@ function post_family_tweaks_bsp__cainiao-cniot-core() {
 	install -Dm644 "${SRC}/packages/bsp/cainiao-cniot-core/cniot-core.conf" \
 		"${destination}/usr/share/alsa/ucm2/Amlogic/axg-sound-card/cniot-core.conf"
 
-	if [ ! -d "${destination}/usr/share/alsa/ucm2/conf.d/axg-sound-card" ]; then
-		mkdir -p "${destination}/usr/share/alsa/ucm2/conf.d/axg-sound-card"
-	fi
-	ln -sfv /usr/share/alsa/ucm2/Amlogic/axg-sound-card/cniot-core.conf \
+	mkdir -p "${destination}/usr/share/alsa/ucm2/conf.d/axg-sound-card"
+	ln -sfv ../../Amlogic/axg-sound-card/cniot-core.conf \
 		"${destination}/usr/share/alsa/ucm2/conf.d/axg-sound-card/cniot-core.conf"
 }

@@ -3,6 +3,7 @@ declare -g BOARD_NAME="Mekotronics R58X-4G"
 declare -g BOARD_VENDOR="mekotronics"
 declare -g BOARDFAMILY="rockchip-rk3588"
 declare -g BOARD_MAINTAINER=""
+declare -g INTRODUCED="2024"
 declare -g KERNEL_TARGET="edge,vendor"
 declare -g BOOT_FDT_FILE="rockchip/rk3588-blueberry-edge-v12-linux.dtb" # same name for mainline and vendor
 declare -g DISPLAY_MANAGER="wayland"
@@ -11,8 +12,8 @@ declare -g BOOT_SOC="rk3588"
 declare -g IMAGE_PARTITION_TABLE="gpt"
 # Does not have a UEFI_EDK2_BOARD_ID
 
-if [[ "${BRANCH}" == "vendor" || "${BRANCH}" == "legacy" ]]; then
-	display_alert "$BOARD" "vendor/legacy configuration applied for $BOARD / $BRANCH" "info"
+if [[ "${BRANCH}" == "vendor" ]]; then
+	display_alert "$BOARD" "vendor configuration applied for $BOARD / $BRANCH" "info"
 	declare -g BOOTCONFIG="mekotronics_r58x-rk3588_defconfig" # vendor u-boot; with NVMe and a DTS
 	# Source shared vendor configuration; it does BOOT_SCENARIO="spl-blobs" & hciattach - common to all vendor-kernel Meko's
 	source "${SRC}/config/sources/vendors/mekotronics/mekotronics-rk3588.conf.sh"
@@ -29,7 +30,7 @@ function post_family_config__mekor58x_4g_use_mainline_uboot() {
 	declare -g BOOTCONFIG="mekotronics-r58x-4g-rk3588_defconfig" # mainline
 	declare -g BOOTDELAY=1
 	declare -g BOOTSOURCE="https://github.com/u-boot/u-boot.git"
-	declare -g BOOTBRANCH="tag:v2026.04-rc2"
+	declare -g BOOTBRANCH="tag:v2026.04"
 	declare -g BOOTPATCHDIR="v2026.04"
 	declare -g BOOTDIR="u-boot-${BOARD}"
 

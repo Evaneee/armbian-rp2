@@ -42,7 +42,10 @@ case $BRANCH in
 		declare -g KERNEL_MAJOR_MINOR="6.18"
 		;;
 	edge)
-		declare -g KERNEL_MAJOR_MINOR="7.0"
+		declare -g KERNEL_MAJOR_MINOR="7.2"
+		;;
+	bleedingedge)
+		declare -g KERNEL_MAJOR_MINOR="7.3"
 		;;
 
 esac
@@ -51,6 +54,16 @@ esac
 # See https://github.com/armbian/build/pull/6227
 function custom_kernel_config__enable_rtl88x2cs_driver() {
 	opts_m+=("CONFIG_RTL8822CS")
+}
+
+# ODROID-HC4, Khadas VIM3 and VIM3L, Banana Pi M2S and CM4IO enable PCIe in their
+# device tree. Without the port services their root port has no driver: nothing
+# moves it to D3hot for suspend, and AER stays unserviced.
+function custom_kernel_config__meson64_pcie_port_services() {
+	opts_y+=(
+		CONFIG_PCIEPORTBUS
+		CONFIG_PCIEAER
+	)
 }
 
 # this helper function includes postprocess for s400 and its variants.
@@ -196,13 +209,13 @@ uboot_gxl_postprocess_ng() {
 		$1/bl21_zero.bin \
 		$1/bl2_new.bin bl2
 
-	run_host_command_logged $1/aml_encrypt_gxl --bl3enc --input $1/bl30_new.bin
-	run_host_command_logged $1/aml_encrypt_gxl --bl3enc --input $1/bl31.img
-	run_host_command_logged $1/aml_encrypt_gxl --bl3enc --input bl33.bin
-	run_host_command_logged $1/aml_encrypt_gxl --bl2sig --input $1/bl2_new.bin \
+	run_host_x86_binary_logged $1/aml_encrypt_gxl --bl3enc --input $1/bl30_new.bin
+	run_host_x86_binary_logged $1/aml_encrypt_gxl --bl3enc --input $1/bl31.img
+	run_host_x86_binary_logged $1/aml_encrypt_gxl --bl3enc --input bl33.bin
+	run_host_x86_binary_logged $1/aml_encrypt_gxl --bl2sig --input $1/bl2_new.bin \
 		--output bl2.n.bin.sig
 
-	run_host_command_logged $1/aml_encrypt_gxl --bootmk --output u-boot.bin \
+	run_host_x86_binary_logged $1/aml_encrypt_gxl --bootmk --output u-boot.bin \
 		--bl2 bl2.n.bin.sig \
 		--bl30 $1/bl30_new.bin.enc \
 		--bl31 $1/bl31.img.enc \
@@ -220,7 +233,8 @@ family_tweaks_bsp() {
 
 	mkdir -p "$destination"/etc/X11/xorg.conf.d
 	case "${BOARD}" in
-		"odroidc2" | "nanopik2-s905" | "lepotato" | "sweet-potato" | "lafrite" | "khadas-vim1" | "khadas-vim2" | "aml-c400-plus" | "aml-s9xx-box")
+		"odroidc2" | "nanopik2-s905" | "lepotato" | "sweet-potato" | "lafrite" | "khadas-vim1" | "khadas-vim2" | \
+			"aml-c400-plus" | "aml-s9xx-box" | "bestv-r3300-l")
 			cat <<- EOF > "$destination"/etc/X11/xorg.conf.d/02-driver.conf
 				Section "OutputClass"
 				    Identifier "Amlogic"
@@ -242,7 +256,7 @@ family_tweaks_bsp() {
 			EOF
 			;;
 		"jethubj200" | "odroidn2" | "odroidc4" | "khadas-vim2" | "odroidhc4" | "khadas-vim3" | "khadas-vim3l" | \
-		"radxa-zero" | "radxa-zero2" | "bananapi-m2s" | "cainiao-cniot-core")
+			"radxa-zero" | "radxa-zero2" | "bananapi-m2s" | "cainiao-cniot-core")
 			cat <<- EOF > "$destination"/etc/X11/xorg.conf
 				Section "Device"
 				    Identifier  "DRM Graphics Acclerated"

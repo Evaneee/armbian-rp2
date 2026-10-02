@@ -149,12 +149,6 @@ function compile_uboot_target() {
 			run_host_command_logged scripts/config --set-val CONFIG_BOOTDELAY "${BOOTDELAY}"
 		fi
 
-		# Hack, up the log level to 6: "info" (default is 4: "warning")
-		display_alert "Hacking log level in u-boot config" "LOGLEVEL=${uboot_loglevel} for ${target}" "info"
-		run_host_command_logged scripts/config --enable CONFIG_LOG
-		run_host_command_logged scripts/config --set-val CONFIG_LOGLEVEL ${uboot_loglevel}
-		run_host_command_logged scripts/config --set-val CONFIG_LOG_MAX_LEVEL ${uboot_loglevel}
-
 		# Include Armbian version so UART bootlogs are drastically more useful
 		run_host_command_logged ./scripts/config --disable "LOCALVERSION_AUTO"
 		run_host_command_logged ./scripts/config --set-str "LOCALVERSION" "_armbian-${artifact_version}" # crazy quotes!
@@ -194,9 +188,13 @@ function compile_uboot_target() {
 	local -a uboot_cflags_array=(
 		"-fdiagnostics-color=always" # color messages
 		"-Wno-error=maybe-uninitialized"
-		"-Wno-error=misleading-indentation"   # patches have mismatching indentation
-		"-Wno-error=attributes"               # for very old-uboots
-		"-Wno-error=address-of-packed-member" # for very old-uboots
+		"-Wno-error=misleading-indentation"        # patches have mismatching indentation
+		"-Wno-error=attributes"                    # for very old-uboots
+		"-Wno-error=address-of-packed-member"      # for very old-uboots
+		"-Wno-error=implicit-function-declaration" # gcc >= 14 (trixie) makes these hard errors; old u-boots miss #include <env.h> etc.
+		"-Wno-error=implicit-int"                  # companion to the above on gcc >= 14
+		"-Wno-error=int-conversion"                # gcc >= 14 hard error; vendor u-boots (e.g. Realtek rtd16xxb) assign ptr<->int
+		"-Wno-error=incompatible-pointer-types"    # gcc >= 14 hard error; vendor driver callback signatures mismatch
 	)
 	if linux-version compare "${gcc_version_main}" ge "11.0"; then
 		uboot_cflags_array+=(
@@ -276,11 +274,13 @@ function compile_uboot_target() {
 
 	display_alert "${uboot_prefix}Compiling u-boot" "${version} ${target_make} with gcc '${gcc_version_main}'" "info"
 	declare -g if_error_detail_message="${uboot_prefix}Failed to build u-boot ${version} ${target_make}"
-	do_with_ccache_statistics run_host_command_logged_long_running \
+	do_with_compile_wrapper do_with_ccache_statistics run_host_command_logged_long_running \
 		"env" "-i" "${uboot_make_envs[@]}" \
 		pipetty make "$target_make" "$CTHREADS" "${cross_compile}"
 
 	display_alert "${uboot_prefix}built u-boot target" "${version} in $((SECONDS - ts)) seconds" "info"
+
+	report_uboot_spl_size_usage
 
 	# Save a defconfig, as that will be included as reference in the .deb package
 	# Do not fail here; some very (very!) old u-boots like 2011 do not have 'savedefconfig'
@@ -329,6 +329,43 @@ function compile_uboot_target() {
 	fi
 
 	display_alert "${uboot_prefix}Done with u-boot target" "${version} ${target_make}"
+	return 0
+}
+
+# Report SPL/TPL size against CONFIG_*_MAX_SIZE and CONFIG_*_SIZE_LIMIT. Warn when close.
+function report_uboot_spl_size_usage() {
+	[[ -f .config ]] || return 0
+	declare -i warn_percent=90
+	[[ "${UBOOT_SPL_SIZE_WARN_PERCENT:-}" =~ ^[0-9]+$ ]] && warn_percent="$((10#${UBOOT_SPL_SIZE_WARN_PERCENT}))"
+	declare stage prefix kind value bin
+	declare -i size limit percent
+	for stage in SPL TPL; do
+		prefix="${stage,,}"
+		# MAX_SIZE: the linker checks the image without the device tree.
+		# SIZE_LIMIT: the Makefile checks the final .bin, device tree included.
+		for kind in MAX_SIZE SIZE_LIMIT; do
+			value="$(sed -n "s/^CONFIG_${stage}_${kind}=//p" .config)"
+			[[ "${value}" =~ ^(0[xX][0-9a-fA-F]+|[0-9]+)$ ]] || continue
+			limit=$((value))
+			# The Makefile subtracts reserved space from the SPL limit; this tool prints the result.
+			if [[ "${stage}_${kind}" == SPL_SIZE_LIMIT && -x tools/spl_size_limit ]]; then
+				limit="$(tools/spl_size_limit)"
+			fi
+			((limit > 0)) || continue
+			bin="${prefix}/u-boot-${prefix}.bin"
+			if [[ "${kind}" == MAX_SIZE && -f "${prefix}/u-boot-${prefix}-nodtb.bin" ]]; then
+				bin="${prefix}/u-boot-${prefix}-nodtb.bin"
+			fi
+			[[ -f "${bin}" ]] || continue
+			size=$(stat -c %s "${bin}")
+			percent=$((size * 100 / limit))
+			if ((percent >= warn_percent)); then
+				display_alert "${uboot_prefix:-}u-boot ${stage} size close to CONFIG_${stage}_${kind}" "${size} / ${limit} bytes (${percent}%)" "warn"
+			else
+				display_alert "${uboot_prefix:-}u-boot ${stage} size vs CONFIG_${stage}_${kind}" "${size} / ${limit} bytes (${percent}%)" "info"
+			fi
+		done
+	done
 	return 0
 }
 
@@ -488,11 +525,23 @@ function compile_uboot() {
 		display_alert "Analyzing u-boot binary with binwalk" "'${base_binfile}' built on ${HOSTRELEASE}" "info"
 		run_host_command_logged file --brief "${binfile}" "||" true ";" binwalk --run-as=root "${binfile}" "||" true # do not fail, ever
 
+		display_alert "Analyzing u-boot binary with dumpimage" "'${base_binfile}' built on ${HOSTRELEASE}" "info"
+		run_host_command_logged dumpimage -l "${binfile}" "||" true # do not fail, ever
+
 		if [[ "${UBOOT_BINS_TO_OUTPUT}" == "yes" ]]; then
 			display_alert "Copying u-boot binary to output for later binwalk inspection" "'${base_binfile}' built on ${HOSTRELEASE}" "warn"
 			declare target="${SRC}/output/uboot-bin-${uboot_name}-${base_binfile}-host-${HOSTRELEASE}.bin"
 			run_host_command_logged cp -v "${binfile}" "${target}"
 		fi
+
+		# Delegate to a hook for any extra analysis of the u-boot binary file
+		call_extension_method "check_uboot_produced_binary_file" <<- 'CHECK_UBOOT_PRODUCED_BINARY_FILE'
+			*check one produced u-boot binary*
+			This is called once for *each* produced u-boot binary file, before packaging them into the .deb package.
+			You can use this to analyze the produced binary for correctness, or to extract some information from it.
+			You can use the variable binfile to access the full path to the binary file, and base_binfile to access just the filename.
+		CHECK_UBOOT_PRODUCED_BINARY_FILE
+
 	done
 
 	artifact_package_hook_helper_board_side_functions "postinst" uboot_postinst_base "${postinst_functions[@]}"
@@ -505,6 +554,7 @@ function compile_uboot() {
 		DIR=/usr/lib/$uboot_name
 		$(declare -f write_uboot_platform || true)
 		$(declare -f write_uboot_platform_mtd || true)
+		$(declare -f write_uboot_platform_ufs || true)
 		$(declare -f setup_write_uboot_platform || true)
 	EOF
 
@@ -584,7 +634,7 @@ function uboot_postinst_base() {
 		#recognize_root
 		root_uuid=$(sed -e 's/^.*root=//' -e 's/ .*$//' < /proc/cmdline)
 		root_partition=$(blkid | tr -d '":' | grep "${root_uuid}" | awk '{print $1}')
-		root_partition_name=$(echo $root_partition | sed 's/\/dev\///g')
+		root_partition_name="${root_partition#/dev/}"
 		root_partition_device_name=$(lsblk -ndo pkname $root_partition)
 		root_partition_device=/dev/$root_partition_device_name
 

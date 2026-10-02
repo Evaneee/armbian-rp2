@@ -47,7 +47,7 @@ function do_main_configuration() {
 		unset VENDORSUPPORT,VENDORPRIVACY,VENDORBUGS,VENDORLOGO,ROOTPWD,MAINTAINER,MAINTAINERMAIL
 	fi
 
-	[[ -z $VENDORCOLOR ]] && VENDORCOLOR="247;16;0"                           # RGB values for MOTD logo
+	[[ -z $VENDORCOLOR ]] && VENDORCOLOR="247;16;0" # RGB values for MOTD logo
 	[[ -z $VENDORURL ]] && VENDORURL="https://duckduckgo.com/"
 	[[ -z $VENDORSUPPORT ]] && VENDORSUPPORT="https://community.armbian.com/"
 	[[ -z $VENDORPRIVACY ]] && VENDORPRIVACY="https://duckduckgo.com/"
@@ -60,10 +60,16 @@ function do_main_configuration() {
 	DEST_LANG="${DEST_LANG:-"en_US.UTF-8"}"                                   # en_US.UTF-8 is default locale for target
 	display_alert "DEST_LANG..." "DEST_LANG: ${DEST_LANG}" "debug"
 
-	declare -g USE_CCACHE="${USE_CCACHE:-no}"                              # stop using ccache as our worktree is more effective
+	declare -g USE_CCACHE="${USE_CCACHE:-no}" # stop using ccache as our worktree is more effective
 
 	# Armbian config is central tool used in all builds. As its build externally, we have moved it to extension. Enable it here.
 	enable_extension "armbian-config"
+
+	# Fix binman pkg_resources removal in setuptools >= 82. Can be removed when all U-Boot versions are >= v2025.10.
+	enable_extension "uboot-binman-fix-pkg-resources"
+
+	# Fix old U-Boot pylibfdt failing against SWIG >= 4.3 (trixie). No-op on newer U-Boot. Can be removed when all U-Boot versions are >= v2026.07.
+	enable_extension "uboot-fix-pylibfdt-swig"
 
 	# Network stack to use, default to network-manager; configuration can override this.
 	# Will be made read-only further down.
@@ -149,6 +155,7 @@ function do_main_configuration() {
 			;;
 		btrfs)
 			enable_extension "fs-btrfs-support"
+			[[ -n "$BTRFS_CHECKSUM" && ! "$BTRFS_CHECKSUM" =~ ^(crc32c|xxhash|sha256|blake2)$ ]] && exit_with_error "Unknown btrfs checksum algorithm" "$BTRFS_CHECKSUM"
 			[[ -z $BTRFS_COMPRESSION ]] && BTRFS_COMPRESSION=zlib # default btrfs filesystem compression method is zlib
 			[[ ! $BTRFS_COMPRESSION =~ zlib|lzo|zstd|none ]] && exit_with_error "Unknown btrfs compression method" "$BTRFS_COMPRESSION"
 			;;
@@ -160,14 +167,17 @@ function do_main_configuration() {
 			;;
 	esac
 
-	# Check if the filesystem type is supported by the build host
-	if [[ $CONFIG_DEFS_ONLY != yes ]]; then # don't waste time if only gathering config defs
+	# Check if the filesystem type is supported by the build host.
+	# Skipped for nfs / nfs-root: these rootfs types produce a tarball on the
+	# host (rootfs-to-image.sh `tar | gzip`) and never mount NFS locally — the
+	# target's kernel mounts it at boot time, so host FS support is irrelevant.
+	if [[ $CONFIG_DEFS_ONLY != yes && $ROOTFS_TYPE != nfs && $ROOTFS_TYPE != nfs-root ]]; then # don't waste time if only gathering config defs
 		check_filesystem_compatibility_on_host
 	fi
 
 	# Support for LUKS / cryptroot
 	if [[ $CRYPTROOT_ENABLE == yes ]]; then
-		enable_extension "fs-cryptroot-support" # add the tooling needed, cryptsetup
+		enable_extension "fs-cryptroot-support"                                   # add the tooling needed, cryptsetup
 		if [[ -z $CRYPTROOT_PASSPHRASE ]] && [[ -z $CRYPTROOT_AUTOUNLOCK ]]; then # a passphrase is mandatory if rootfs encryption is enabled, unless CRYPTROOT_AUTOUNLOCK is wanted
 			exit_with_error "Root encryption is enabled but CRYPTROOT_PASSPHRASE or CRYPTROOT_AUTOUNLOCK is not set"
 		fi
@@ -199,6 +209,15 @@ function do_main_configuration() {
 	# Defaults... # @TODO: why?
 	declare -g -r MAINLINE_UBOOT_DIR='u-boot'
 
+	# Opt-in cache-bust string for the u-boot artifact. A board/family that ships a
+	# prebuilt or externally-fetched u-boot blob (e.g. khadas-vim1/vim2) sets this —
+	# typically to the blob's upstream version — and bumps it whenever the blob
+	# changes, so the u-boot .deb repackages instead of reusing the cached artifact.
+	# It can't be a content hash: the blob may live outside this repo and not exist
+	# yet at matrix-prep. Folded into the artifact version by artifact-uboot.sh.
+	# (`:-` so it never clobbers a value a board/family already set.)
+	declare -g UBOOT_HASH_EXTRA="${UBOOT_HASH_EXTRA:-}"
+
 	# pre-calculate mirrors. important: this sets _SOURCE variants that might be used in common.conf to default things to mainline, but using mirror.
 	# @TODO: setting them here allows family/board code (and hooks) to read them and embed them into configuration, which is bad: it might end up without the mirror.
 	[[ $USE_MAINLINE_GOOGLE_MIRROR == yes ]] && MAINLINE_MIRROR=google
@@ -228,6 +247,11 @@ function do_main_configuration() {
 
 	[[ $USE_GITHUB_UBOOT_MIRROR == yes ]] && UBOOT_MIRROR=github # legacy compatibility?
 
+	# A CI runner that advertises a pass-through git proxy (GITPROXY_ADDRESS,
+	# exported from NetBox by the runner) selects the gitproxy mirror
+	# automatically, unless an explicit GITHUB_MIRROR was already set.
+	[[ -z $GITHUB_MIRROR && -n ${GITPROXY_ADDRESS:-} ]] && GITHUB_MIRROR=gitproxy
+
 	case $GITHUB_MIRROR in
 		fastgit)
 			declare -g -r GITHUB_SOURCE='https://hub.fastgit.xyz'
@@ -235,6 +259,9 @@ function do_main_configuration() {
 		ghproxy)
 			[[ -z $GHPROXY_ADDRESS ]] && GHPROXY_ADDRESS=ghfast.top
 			declare -g -r GITHUB_SOURCE="https://${GHPROXY_ADDRESS}/https://github.com"
+			;;
+		gitproxy)
+			declare -g -r GITHUB_SOURCE="${GITPROXY_ADDRESS}"
 			;;
 		gitclone)
 			declare -g -r GITHUB_SOURCE='https://gitclone.com/github.com'
@@ -244,6 +271,10 @@ function do_main_configuration() {
 			;;
 	esac
 
+	# Note: this selects the mirror for BOOTSOURCE on boards that use mainline u-boot. It no
+	# longer has anything to do with the shared u-boot bare tree, which since the move to
+	# premade ORAS git trees always comes from ${GHCR_SOURCE} -- see uboot-git-oras.sh, and
+	# GHCR_MIRROR / GIT_ORAS_TARBALLS_SHALLOW_BASE_REF for redirecting that.
 	case $UBOOT_MIRROR in
 		gitee)
 			declare -g -r MAINLINE_UBOOT_SOURCE='https://gitee.com/mirrors/u-boot.git'
@@ -256,18 +287,28 @@ function do_main_configuration() {
 			;;
 	esac
 
+	# OCI storage for artifacts (OCI_PATH) and git trees (OCI_GIT_PATH).
+	declare -g OCI_SERVER="${OCI_SERVER:-"ghcr.io"}"
+	declare -g OCI_PATH="${OCI_PATH:-"armbian/os"}"
+	declare -g OCI_GIT_PATH="${OCI_GIT_PATH:-"armbian/shallow"}"
+
+	# OCI_PROXY: optional read-only cache of OCI_SERVER (host[:port]). Never used for uploads.
+	# GHCR_MIRROR selects a public ghcr.io mirror as OCI_PROXY.
 	case $GHCR_MIRROR in
 		dockerproxy)
-			GHCR_MIRROR_ADDRESS="${GHCR_MIRROR_ADDRESS:-"ghcr.dockerproxy.net"}"
-			declare -g -r GHCR_SOURCE=$GHCR_MIRROR_ADDRESS
+			OCI_PROXY="${OCI_PROXY:-"${GHCR_MIRROR_ADDRESS:-"ghcr.dockerproxy.net"}"}"
 			;;
 		nju)
-			declare -g -r GHCR_SOURCE='ghcr.nju.edu.cn'
-			;;
-		*)
-			declare -g -r GHCR_SOURCE='ghcr.io'
+			OCI_PROXY="${OCI_PROXY:-"ghcr.nju.edu.cn"}"
 			;;
 	esac
+	declare -g OCI_PROXY="${OCI_PROXY:-}"
+
+	# Deprecated overrides: OCI_TARGET_BASE, GIT_ORAS_TARBALLS_SHALLOW_BASE_REF.
+	declare -g GIT_ORAS_TARBALLS_SHALLOW_BASE_REF="${GIT_ORAS_TARBALLS_SHALLOW_BASE_REF:-"${OCI_SERVER}/${OCI_GIT_PATH}"}"
+
+	# Deprecated. Kept for extensions and userpatches.
+	declare -g -r GHCR_SOURCE="${OCI_PROXY:-"${OCI_SERVER}"}"
 
 	# Let's set default data if not defined in board configuration above
 	[[ -z $OFFSET ]] && OFFSET=4 # offset to 1st partition (we use 4MiB boundaries by default)
@@ -320,7 +361,7 @@ function do_main_configuration() {
 			;;
 	esac
 
-        # enable APA extension for Debian Unstable release
+	# enable APA extension for Debian Unstable release
 	# loong64 is not supported now
 	#  [ "$RELEASE" = "sid" ] && [ "$ARCH" != "loong64" ] && enable_extension "apa"
 
@@ -370,8 +411,9 @@ function do_extra_configuration() {
 	fi
 
 	DEBIAN_MIRROR='deb.debian.org/debian'
-	# loong64 is using debian-ports repo now
-	[[ "${ARCH}" == "loong64" ]] && DEBIAN_MIRROR='deb.debian.org/debian-ports'
+	# loong64 was promoted from debian-ports into the main Debian archive (it is
+	# listed in sid's Architectures: and dropped from debian-ports), so it now uses
+	# the default deb.debian.org/debian mirror like every other architecture.
 	DEBIAN_SECURITY='security.debian.org/'
 	[[ "${ARCH}" == "amd64" ]] &&
 		UBUNTU_MIRROR='archive.ubuntu.com/ubuntu/' ||
@@ -410,15 +452,10 @@ function do_extra_configuration() {
 	# Control aria2c's usage of ipv6.
 	[[ -z $DISABLE_IPV6 ]] && DISABLE_IPV6="true"
 
-	# @TODO this is _very legacy_ and should be removed. Old-time users might have a lib.config lying around and it will mess up things.
-	# For (late) user override.
-	# Notice: it is too late to define hook functions or add extensions in lib.config, since the extension initialization already ran by now.
-	#         in case the user tries to use them in lib.config, hopefully they'll be detected as "wishful hooking" and the user will be wrn'ed.
+	# lib.config was soft-deprecated with the next-gen framework. Its documentation was removed over a year ago.
+	# @TODO: remove this check end of 2027.
 	if [[ -f $USERPATCHES_PATH/lib.config ]]; then
-		display_alert "Using user configuration override" "$USERPATCHES_PATH/lib.config" "info"
-		# shellcheck source=/dev/null
-		source "$USERPATCHES_PATH"/lib.config
-		track_general_config_variables "after sourcing lib.config"
+		exit_with_error "lib.config is not supported anymore." "Remove ${USERPATCHES_PATH}/lib.config. Use https://docs.armbian.com/build-framework/user-configurations/ instead."
 	fi
 
 	# Prepare array for extensions to fill in.
@@ -428,8 +465,6 @@ function do_extra_configuration() {
 	call_extension_method "user_config" <<- 'USER_CONFIG'
 		*Invoke function with user override*
 		Allows for overriding configuration values set anywhere else.
-		It is called after sourcing the `lib.config` file if it exists,
-		but before assembling any package lists.
 	USER_CONFIG
 	track_general_config_variables "after user_config hooks"
 
@@ -449,12 +484,23 @@ function do_extra_configuration() {
 		APT_MIRROR=$UBUNTU_MIRROR
 	fi
 
-	[[ -n "${APT_PROXY_ADDR}" ]] && display_alert "Using custom apt proxy address" "APT_PROXY_ADDR=${APT_PROXY_ADDR}" "info"
+	# Derive APT_PROXY_ADDR from proxy env vars if unset, which runners.sh uses inside chroot.
+	# Skip if MANAGE_ACNG is active to prevent conflicting behavior.
+	if [[ -z "${APT_PROXY_ADDR}" && -n "${http_proxy:-${https_proxy:-${HTTP_PROXY:-${HTTPS_PROXY:-}}}}" && (-z "${MANAGE_ACNG}" || "${MANAGE_ACNG}" == "no") ]]; then
+		APT_PROXY_ADDR="$(echo "${http_proxy:-${https_proxy:-${HTTP_PROXY:-${HTTPS_PROXY:-}}}}" | sed -E 's|https?://([^/]+).*|\1|')"
+		display_alert "Derived APT proxy address from proxy env vars" "${APT_PROXY_ADDR##*@}" "info"
+	fi
+	[[ -n "${APT_PROXY_ADDR}" ]] && display_alert "Using custom apt proxy address" "APT_PROXY_ADDR=${APT_PROXY_ADDR##*@}" "info"
 
 	# @TODO: allow to run aggregation, for CONFIG_DEFS_ONLY? rootfs_aggregate_packages
 
-	# Give the option to configure DNS server used in the chroot during the build process
-	[[ -z $NAMESERVER ]] && NAMESERVER="1.0.0.1" # default is cloudflare alternate
+	# Derive host DNS server so chroot can resolve hostnames on proxy; else, use cloudflare
+	if [[ -z "${NAMESERVER}" ]]; then
+		declare _dns_resolv_file="/etc/resolv.conf"
+		[[ -f "/run/systemd/resolve/resolv.conf" ]] && _dns_resolv_file="/run/systemd/resolve/resolv.conf"
+		NAMESERVER="$(awk '(/^nameserver/) && ($2 !~ /^127\./) && ($2 != "::1") && ($2 !~ /^fe80:/) {print $2; exit}' "${_dns_resolv_file}" 2> /dev/null)"
+		NAMESERVER="${NAMESERVER:-1.0.0.1}"
+	fi
 
 	# Consolidate the extra image suffix. loop and add.
 	declare EXTRA_IMAGE_SUFFIX=""
@@ -515,7 +561,7 @@ function write_config_summary_output_file() {
 		Minimal: $BUILD_MINIMAL
 		Desktop: $BUILD_DESKTOP
 		Desktop Environment: $DESKTOP_ENVIRONMENT
-		Software groups: $DESKTOP_APPGROUPS_SELECTED
+		Desktop Tier: $DESKTOP_TIER
 
 		Kernel configuration:
 		Repository: $KERNELSOURCE

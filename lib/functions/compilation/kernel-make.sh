@@ -57,8 +57,8 @@ function run_kernel_make_internal() {
 		"ARCH=${ARCHITECTURE}"                   # Key param. Everything depends on this.
 		"LOCALVERSION=-${BRANCH}-${LINUXFAMILY}" # Change the internal kernel version to include the family. Changing this causes recompiles # @TODO change hack at .config; that might handles mtime better
 
-		"${cc_name}=${CCACHE} ${DISTCC_CROSS_COMPILE_PREFIX[@]} ${KERNEL_COMPILER}"                                         # added as prefix to every compiler invocation by make
-		"KCFLAGS=-fdiagnostics-color=always -Wno-error=misleading-indentation ${extra_warnings} ${KERNEL_EXTRA_CFLAGS:-""}" # Force GCC colored messages, downgrade misleading indentation to warning
+		"${cc_name}=${CCACHE:+${CCACHE} }${DISTCC_CROSS_COMPILE_PREFIX[*]:+${DISTCC_CROSS_COMPILE_PREFIX[*]} }${KERNEL_COMPILER}" # added as prefix to every compiler invocation by make
+		"KCFLAGS=-fdiagnostics-color=always -Wno-error=misleading-indentation ${extra_warnings} ${KERNEL_EXTRA_CFLAGS:-""}"       # Force GCC colored messages, downgrade misleading indentation to warning
 
 		"SOURCE_DATE_EPOCH=${kernel_base_revision_ts}"        # https://reproducible-builds.org/docs/source-date-epoch/ and https://www.kernel.org/doc/html/latest/kbuild/reproducible-builds.html
 		"KBUILD_BUILD_TIMESTAMP=${kernel_base_revision_date}" # https://www.kernel.org/doc/html/latest/kbuild/kbuild.html#kbuild-build-timestamp
@@ -111,8 +111,10 @@ function run_kernel_make_dialog() {
 
 function run_kernel_make_long_running() {
 	local seconds_start=${SECONDS} # Bash has a builtin SECONDS that is seconds since start of script
-	KERNEL_MAKE_UNBUFFER="unbuffer" run_kernel_make_internal "$@"
+	local command_result=0
+	KERNEL_MAKE_UNBUFFER="unbuffer" run_kernel_make_internal "$@" || command_result=$?
 	display_alert "Kernel Make '$*' took" "$((SECONDS - seconds_start)) seconds" "debug"
+	return ${command_result}
 }
 
 function kernel_determine_toolchain() {
@@ -129,6 +131,16 @@ function kernel_determine_toolchain() {
 	else
 		kernel_compiler_full="${KERNEL_COMPILER}gcc"
 	fi
+
+	# Fail fast with a readable message if the (cross-)compiler is missing, instead of
+	# letting the '-dumpversion' invocation below die with a cryptic
+	# "env: '${kernel_compiler_full}': No such file or directory" (Error 127). The common
+	# case is cross-building a target whose toolchain is unavailable on this host - e.g. an
+	# arm64 target on a riscv64 host, where gcc-aarch64-linux-gnu is not in the repositories.
+	if ! eval command -v "${kernel_compiler_full}" > /dev/null 2>&1; then
+		exit_with_error "Kernel compiler '${kernel_compiler_full}' not found for target ${ARCH} on host $(dpkg --print-architecture); its cross-toolchain is likely unavailable for this host architecture. Build on a supported host, use a Docker build, or install the toolchain."
+	fi
+
 	kernel_compiler_version="$(eval env "${kernel_compiler_full}" -dumpfullversion -dumpversion)"
 	display_alert "Compiler version" "${kernel_compiler_full} ${kernel_compiler_version}" "info"
 }

@@ -1,8 +1,9 @@
-# Rockchip RK3588s 2GB-16GB GBE eMMC NVMe SATA USB3 WiFi
+# Rockchip RK3588S octa core 4GB-16GB GBE eMMC NVMe/SATA USB3 WiFi HDMI
 BOARD_NAME="Station M3"
 BOARD_VENDOR="firefly"
 BOARDFAMILY="rockchip-rk3588"
 BOARD_MAINTAINER="chainsx"
+INTRODUCED="2021"
 KERNEL_TARGET="vendor,current"
 KERNEL_TEST_TARGET="vendor"
 BOOTCONFIG="roc-pc-rk3588s_defconfig"

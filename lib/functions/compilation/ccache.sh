@@ -20,9 +20,9 @@ function ccache_get_stat() {
 # Calculate hit percentage from hit and miss counts
 function ccache_hit_pct() {
 	local hit="$1" miss="$2"
-	local total=$(( hit + miss ))
+	local total=$((hit + miss))
 	if [[ $total -gt 0 ]]; then
-		echo $(( hit * 100 / total ))
+		echo $((hit * 100 / total))
 	else
 		echo 0
 	fi
@@ -100,7 +100,7 @@ function do_with_ccache_statistics() {
 
 		# calculate the difference, in human-readable format; numfmt is from coreutils.
 		local ccache_dir_size_diff_human
-		ccache_dir_size_diff_human="$(numfmt --to=iec-i --suffix=B --format="%.2f" "${ccache_dir_size_diff}")"
+		ccache_dir_size_diff_human="$(numfmt --to=iec-i --suffix=B --format="%.2f" -- "${ccache_dir_size_diff}")"
 
 		# display the difference
 		display_alert "ccache dir size change" "${ccache_dir_size_diff_human}" "ccache"

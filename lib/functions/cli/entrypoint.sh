@@ -19,6 +19,14 @@ function cli_entrypoint() {
 		trap 'echo "${FUNCNAME[*]}|${BASH_LINENO[*]}|${BASH_SOURCE[*]}|${LINENO}" >> ${SRC}/output/call-traces/calls.txt ;' RETURN
 	fi
 
+	# Capture the real terminal width once, here, before any logging redirects
+	# fd 1, so the patch-summary tables can match the user's terminal. Empty when
+	# stdout is not a tty (piped / CI), so those runs fall back to a fixed width.
+	declare -g -x ARMBIAN_TTY_COLUMNS="" # "exported" to shutup shellcheck; read by the patching wrappers
+	if [[ -t 1 ]]; then
+		ARMBIAN_TTY_COLUMNS="$(tput cols 2> /dev/null || echo "")"
+	fi
+
 	# @TODO: allow for a super-early userpatches/config-000.custom.conf.sh to be loaded, before anything else.
 	# This would allow for custom commands and interceptors.
 
@@ -36,6 +44,13 @@ function cli_entrypoint() {
 	# This will be done _again_ later, to make sure cmdline params override config et al.
 	apply_cmdline_params_to_env "early" # which uses ARMBIAN_PARSED_CMDLINE_PARAMS
 	# From here on, no more ${1} or stuff. We've parsed it all into ARMBIAN_PARSED_CMDLINE_PARAMS or ARMBIAN_NON_PARAM_ARGS and ARMBIAN_COMMAND.
+
+	# Normalize renamed switches now, while the command line is all we have.
+	# The pre_run loop and the PREFER_DOCKER / DOCKER_NICE checks below read
+	# ARMBIAN_PARSED_CMDLINE_PARAMS directly, so an alias that only reached the
+	# environment would be invisible to them. Config files are handled by the
+	# second pass further down, once they have been sourced.
+	apply_deprecated_switch_aliases
 
 	# Re-initialize logging, to take into account the new environment after parsing cmdline params.
 	logging_init
@@ -80,33 +95,33 @@ function cli_entrypoint() {
 	done
 
 	declare -g DOCKER_NICE
-	if [[ "$ARMBIAN_COMMAND" == "docker" ]] || \
-		[[ -n "${ARMBIAN_PARSED_CMDLINE_PARAMS["PREFER_DOCKER"]}" && "${ARMBIAN_PARSED_CMDLINE_PARAMS["PREFER_DOCKER"]}" == "yes" ]] || \
+	if [[ "$ARMBIAN_COMMAND" == "docker" ]] ||
+		[[ -n "${ARMBIAN_PARSED_CMDLINE_PARAMS["PREFER_DOCKER"]}" && "${ARMBIAN_PARSED_CMDLINE_PARAMS["PREFER_DOCKER"]}" == "yes" ]] ||
 		[[ -n "${ARMBIAN_PARSED_CMDLINE_PARAMS["DOCKER_NICE"]}" ]]; then
 
-		CURRENT_NICE=$(($(ps -p $$ -o 'nice=')+0))
+		CURRENT_NICE=$(($(ps -p $$ -o 'nice=') + 0))
 		# by default, docker sets up a separate environment that inherits next to nothing.
 		# this detects the current process nice value and attempts to propagate it.
 		if [[ -z "${ARMBIAN_PARSED_CMDLINE_PARAMS["DOCKER_NICE"]}" ]]; then
-		# since it's not been passed to us in our invocation, use our current nice value
-		# this becomes a propagated cmdline parameter in cli-docker.sh
+			# since it's not been passed to us in our invocation, use our current nice value
+			# this becomes a propagated cmdline parameter in cli-docker.sh
 			DOCKER_NICE=$CURRENT_NICE
 			display_alert "Niceness parameter (DOCKER_NICE)" "$DOCKER_NICE" "debug"
 		else
 			# initialize from passed cmdline arg
 			DOCKER_NICE="${ARMBIAN_PARSED_CMDLINE_PARAMS["DOCKER_NICE"]}"
 			# we cast DOCKER_NICE to integer in case we were handed garbage.
-			DOCKER_NICE=$(("$DOCKER_NICE"+0))
+			DOCKER_NICE=$(("$DOCKER_NICE" + 0))
 		fi
-		
+
 		if [[ $CURRENT_NICE -ne $DOCKER_NICE ]]; then
-		# enforce the niceness
+			# enforce the niceness
 			if [[ $UID -eq 0 ]]; then # don't bother if we're not root
 				# Given we run as root in docker, we shouldn't worry about lacking permissions.
 				# if it's an invalid integer value, then we can feel secure in letting it fail.
-				renice -n $DOCKER_NICE -p $$ && \
-				display_alert "enforced nice value (DOCKER_NICE)" "$DOCKER_NICE" "debug" || \
-				display_alert "renice failed" "FAILED" "warn"
+				renice -n $DOCKER_NICE -p $$ &&
+					display_alert "enforced nice value (DOCKER_NICE)" "$DOCKER_NICE" "debug" ||
+					display_alert "renice failed" "FAILED" "warn"
 			fi
 		fi
 	fi
@@ -202,6 +217,7 @@ function cli_entrypoint() {
 	done
 
 	# Early check for deprecations
+	apply_deprecated_switch_aliases # forward renamed switches to their new names, with a warning (backward compat)
 	error_if_lib_tag_set # make sure users are not thrown off by using old parameter which does nothing anymore; explain
 
 	display_alert "Executing final CLI command" "${ARMBIAN_COMMAND}" "debug"

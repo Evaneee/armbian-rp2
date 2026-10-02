@@ -23,9 +23,9 @@ git clone https://github.com/Evaneee/armbian-rp2
 - **Architecture:** x86_64, aarch64, or riscv64
 
 ### Operating System
-- **Native builds:** Armbian or Ubuntu 24.04 (Noble)
+- **Native builds:** Armbian/Debian 13 (Trixie)
 - **Containerized:** Any Docker-capable Linux
-- **Windows:** WSL2 with Armbian/Ubuntu 24.04
+- **Windows:** WSL2 with Armbian/Debian 13 (Trixie)
 
 ### Software
 - Superuser privileges (`sudo` or root)

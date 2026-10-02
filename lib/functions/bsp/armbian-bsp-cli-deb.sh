@@ -127,6 +127,19 @@ function compile_armbian-bsp-cli() {
 	run_host_command_logged rsync -av "${SRC}"/packages/bsp/common/* "${destination}"
 	wait_for_disk_sync "after rsync'ing package/bsp/common for bsp-cli"
 
+	# Optional: park SATA/HDD heads on shutdown. Opt-in per board or family with
+	# HDD_PARK_ON_SHUTDOWN="yes". The generic script syncs, waits for any mdadm
+	# array to go clean, then spins down (hdparm -y) and detaches every
+	# /sys/block/sd*, so NAS-style boards (Odroid HC4/XU4, and any of the many
+	# SATA-capable boards) avoid violent emergency head retracts on power-off.
+	# The script itself skips reboot/kexec. (Not under packages/bsp/common, which
+	# is rsynced to every image unconditionally - this must only install on opt-in.)
+	if [[ "${HDD_PARK_ON_SHUTDOWN}" == "yes" ]]; then
+		display_alert "Installing SATA park-on-shutdown hook" "${BOARD}" "info"
+		mkdir -p "${destination}"/lib/systemd/system-shutdown
+		install -m 0755 "${SRC}"/packages/bsp/park-sata-disks.shutdown "${destination}"/lib/systemd/system-shutdown/park-sata-disks.shutdown
+	fi
+
 	mkdir -p "${destination}"/usr/share/armbian/
 
 	# get bootscript information.
@@ -260,15 +273,23 @@ function reversion_armbian-bsp-cli_deb_contents() {
 	# Depends: linux-base is needed for "linux-version" command in initrd cleanup script
 	# Depends: fping is needed for armbianmonitor to upload armbian-hardware-monitor.log
 	# Depends: base-files (>= ${REVISION}) is to force usage of our base-files package (not the original Distro's).
+	# Depends: ${EXTRA_BSPDEPS} — opt-in slot for family/board-specific runtime deb-Depends.
+	#         Use this (not PACKAGE_LIST_BOARD) when configure-ordering matters:
+	#         only deb-Depends guarantees the dep is configured before this BSP's postinst runs.
 	declare depends_base_files=", base-files (>= ${REVISION})"
 	if [[ "${KEEP_ORIGINAL_OS_RELEASE:-"no"}" == "yes" ]]; then
 		depends_base_files=""
 	fi
+	# Provides/Conflicts/Replaces linux-sysctl-defaults: the BSP ships
+	# /usr/lib/sysctl.d/50-default.conf itself (armbian's copy of the distro
+	# defaults), so it satisfies that dependency without pulling the external
+	# package, and cleanly takes over its file if it was ever installed.
 	cat <<- EOF >> "${control_file_new}"
-		Depends: bash, linux-base, u-boot-tools, initramfs-tools, lsb-release, fping, device-tree-compiler${depends_base_files}
-		Replaces: zram-config, armbian-bsp-cli-${BOARD}${EXTRA_BSP_NAME} (<< ${REVISION})
+		Depends: bash, linux-base, u-boot-tools, initramfs-tools, lsb-release, fping, device-tree-compiler${depends_base_files}${EXTRA_BSPDEPS:+, ${EXTRA_BSPDEPS}}
+		Replaces: zram-config, linux-sysctl-defaults, armbian-bsp-cli-${BOARD}${EXTRA_BSP_NAME} (<< ${REVISION})
 		Breaks: armbian-bsp-cli-${BOARD}${EXTRA_BSP_NAME} (<< ${REVISION})
-		Provides: armbian-bsp-cli
+		Conflicts: linux-sysctl-defaults
+		Provides: armbian-bsp-cli, linux-sysctl-defaults
 	EOF
 
 	artifact_deb_reversion_unpack_data_deb
@@ -372,7 +393,10 @@ function board_side_bsp_cli_preinst() {
 			echo vm.swappiness=100 >> /etc/sysctl.conf
 			;;
 	esac
-	sysctl -p > /dev/null 2>&1
+	# --system (not -p) so the change to /etc/sysctl.conf above *and* the
+	# drop-ins under /usr/lib/sysctl.d (our 50-default.conf) are applied on
+	# upgrade; -p reads only /etc/sysctl.conf and would leave them to next boot.
+	sysctl --system > /dev/null 2>&1
 	# replace canonical advertisement
 	if [[ -d "/var/lib/ubuntu-advantage/messages/" ]]; then
 		echo -e "\nSupport Armbian! \nLearn more at https://armbian.com/donate" > /var/lib/ubuntu-advantage/messages/apt-pre-invoke-esm-service-status
@@ -458,10 +482,6 @@ function board_side_bsp_cli_postinst_finish() {
 	fi
 	if [[ ! -f "/etc/default/armbian-firstrun" ]]; then
 		mv /etc/default/armbian-firstrun.dpkg-dist /etc/default/armbian-firstrun
-	fi
-
-	if [[ -L "/usr/lib/chromium-browser/master_preferences.dpkg-dist" ]]; then
-		mv /usr/lib/chromium-browser/master_preferences.dpkg-dist /usr/lib/chromium-browser/master_preferences
 	fi
 
 	# Reload services

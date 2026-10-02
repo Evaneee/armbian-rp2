@@ -1,14 +1,40 @@
 #!/bin/bash
 set -ex
+# Debian kernel hooks pass the kernel version as the first argument.
+# Fall back to the newest installed kernel when invoked manually without it,
+# so wildcard expansion never matches multiple kernel versions (see armbian/build#10108).
+version="$1"
+if [ -z "${version}" ]; then
+	version=$(ls -1 /boot/vmlinuz-*-sm8550-arm64 2>/dev/null | sed 's|^/boot/vmlinuz-||' | sort -V | tail -n1)
+fi
+kernel="/boot/vmlinuz-${version}"
+ramdisk="/boot/initrd.img-${version}"
+if [ ! -f "${kernel}" ]; then
+	echo "Kernel image not found: ${kernel}" >&2
+	exit 1
+fi
+if [ ! -f "${ramdisk}" ]; then
+	echo "Ramdisk not found: ${ramdisk}" >&2
+	exit 1
+fi
 new_rootfs_image_uuid=$(sed -e 's/^.*root=UUID=//' -e 's/ .*$//' < /proc/cmdline)
-gzip -c /boot/vmlinuz-*-sm8550-arm64 > /tmp/Image.gz
+gzip -c "${kernel}" > /tmp/Image.gz
 
-cat /tmp/Image.gz /usr/lib/linux-image-*-sm8550-arm64/qcom/qcs8550-ayn-odin2-hypdtbo.dtb > /tmp/Image.gz-dtb
-
+# Source the boot environment to obtain the board-specific DTB path.
+# BOOT_FDT_FILE (set per-board as "qcom/qcs8550-<board>.dtb" in the board
+# config) is stored here as fdtfile=..., so the correct DTB is embedded for
+# all supported boards (ayn-odin2, ayn-odin2portal, ayn-odin2mini, ayn-thor)
+# rather than always using the ayn-odin2 DTB.
 source /boot/armbianEnv.txt
+dtb_path="/usr/lib/linux-image-${version}/${fdtfile}"
+if [ ! -f "${dtb_path}" ]; then
+	echo "DTB not found: ${dtb_path}" >&2
+	exit 1
+fi
+cat /tmp/Image.gz "${dtb_path}" > /tmp/Image.gz-dtb
 /usr/bin/mkbootimg \
         --kernel /tmp/Image.gz-dtb \
-        --ramdisk /boot/initrd.img-*-sm8550-arm64 \
+        --ramdisk "${ramdisk}" \
         --base 0x0 \
         --second_offset 0x00f00000 \
         --cmdline "clk_ignore_unused pd_ignore_unused panic=30 audit=0 allow_mismatched_32bit_el0 rw mem_sleep_default=s2idle root=UUID=${new_rootfs_image_uuid}" \
@@ -18,3 +44,8 @@ source /boot/armbianEnv.txt
         --pagesize 4096 \
         -o /boot/armbian-kernel.img
 rm -f /tmp/Image.gz /tmp/Image.gz-dtb
+
+# Update initrd version in LinuxLoader.cfg so it matches the installed kernel
+if [ -f /boot/LinuxLoader.cfg ]; then
+	sed -i "s|^initrd = .*|initrd = \"initrd.img-${version}\"|" /boot/LinuxLoader.cfg
+fi

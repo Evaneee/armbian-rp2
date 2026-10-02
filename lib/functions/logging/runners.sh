@@ -70,12 +70,34 @@ function chroot_sdcard_apt_get() {
 
 	apt_params+=(-o "Dpkg::Use-Pty=0") # Please be quiet
 
+	# Prevent dpkg from prompting about modified conffiles in non-interactive chroot builds.
+	# Without this, packages like ubuntu-pro-client that ship modified conffiles (e.g.
+	# /etc/apt/apt.conf.d/20apt-esm-hook.conf) will prompt on stdin, get EOF, and fail.
+	# --force-confdef: use dpkg's default action (no prompt)
+	# --force-confold: if the default is ambiguous, keep the existing conffile
+	apt_params+=(-o "Dpkg::Options::=--force-confdef")
+	apt_params+=(-o "Dpkg::Options::=--force-confold")
+
 	# --list-cleanup
 	#     This option is on by default; use --no-list-cleanup to turn it off. When it is on, apt-get will
 	#     automatically manage the contents of /var/lib/apt/lists to ensure that obsolete files are erased. The only
 	#     reason to turn it off is if you frequently change your sources list. Configuration Item:
 	#     APT::Get::List-Cleanup.
 	apt_params+=(-o "APT::Get::List-Cleanup=0") # Armbian frequently changes ours sources list; it's dynamic via aggregation
+
+	# Harden apt against transient mirror / proxy / DNS failures:
+	#   Acquire::Retries=3          - retry a failed download a few times instead of
+	#                                 dying on the first blip (apt does not retry at all
+	#                                 otherwise; a flaky mirror/acng/DNS then fails hard).
+	#   APT::Update::Error-Mode=any - make `apt-get update` a HARD failure when ANY index
+	#                                 fails, so the build aborts *at update* with the real
+	#                                 cause (e.g. "Temporary failure resolving ...") rather
+	#                                 than continuing with empty package lists and dying
+	#                                 later at install with a misleading
+	#                                 "E: Unable to locate package ...". Ignored by the
+	#                                 non-update apt-get subcommands.
+	apt_params+=(-o "Acquire::Retries=3")
+	apt_params+=(-o "APT::Update::Error-Mode=any")
 
 	if [[ "${DONT_MAINTAIN_APT_CACHE:-no}" == "yes" ]]; then
 		# Configure Clean-Installed to off
@@ -131,13 +153,20 @@ function chroot_sdcard_apt_get() {
 
 # please, please, unify around this function.
 function chroot_sdcard() {
-	raw_command="$*" raw_extra="chroot_sdcard" TMPDIR="" \
+	# LC_ALL/LANG/LANGUAGE: clear the host's locale before entering the
+	# chroot — the target rootfs usually hasn't generated the host's locale
+	# yet, producing noisy "bash: warning: setlocale: LC_ALL: cannot change
+	# locale" on every chroot_sdcard call. Individual commands that need a
+	# specific locale (dpkg-divert, locale-gen) set LC_ALL=C explicitly.
+	# SUDO_USER: clear so chroot commands don't try to look up the host
+	# builder's username (which doesn't exist inside the rootfs).
+	raw_command="$*" raw_extra="chroot_sdcard" TMPDIR="" LC_ALL="C" LANG="C" LANGUAGE="" SUDO_USER="" \
 		run_host_command_logged_raw chroot "${SDCARD}" /usr/bin/env bash -e -o pipefail -c "$*"
 }
 
 # please, please, unify around this function.
 function chroot_mount() {
-	raw_command="$*" raw_extra="chroot_mount" TMPDIR="" \
+	raw_command="$*" raw_extra="chroot_mount" TMPDIR="" LC_ALL="C" LANG="C" LANGUAGE="" SUDO_USER="" \
 		run_host_command_logged_raw chroot "${MOUNT}" /usr/bin/env bash -e -o pipefail -c "$*"
 }
 
@@ -149,13 +178,13 @@ function chroot_sdcard_with_stdout() {
 function chroot_custom_long_running() { # any pipe causes the left-hand side to subshell and caos ensues. it's just like chroot_custom()
 	local target=$1
 	shift
-	raw_command="$*" raw_extra="chroot_custom_long_running" TMPDIR="" run_host_command_logged_raw chroot "${target}" /usr/bin/env bash -e -o pipefail -c "$*"
+	raw_command="$*" raw_extra="chroot_custom_long_running" TMPDIR="" LC_ALL="C" LANG="C" LANGUAGE="" SUDO_USER="" run_host_command_logged_raw chroot "${target}" /usr/bin/env bash -e -o pipefail -c "$*"
 }
 
 function chroot_custom() {
 	local target=$1
 	shift
-	raw_command="$*" raw_extra="chroot_custom" TMPDIR="" run_host_command_logged_raw chroot "${target}" /usr/bin/env bash -e -o pipefail -c "$*"
+	raw_command="$*" raw_extra="chroot_custom" TMPDIR="" LC_ALL="C" LANG="C" LANGUAGE="" SUDO_USER="" run_host_command_logged_raw chroot "${target}" /usr/bin/env bash -e -o pipefail -c "$*"
 }
 
 # For installing packages host-side. Not chroot!
@@ -187,8 +216,8 @@ function run_host_x86_binary_logged() {
 	if [[ "$(uname -m)" != "x86_64" ]]; then # If we're NOT on x86...
 		case "${target_bin_arch}" in
 			*"x86-64"*) qemu_arch='x86_64' ;;
-			*"80386"*)  qemu_arch='i386' ;;
-			*"i386"*)   qemu_arch='i386' ;;
+			*"80386"*) qemu_arch='i386' ;;
+			*"i386"*) qemu_arch='i386' ;;
 			*)
 				exit_with_error "Unexpected binary architecture (${target_bin_arch}) for '${invoked_bin}'"
 				;;
