@@ -1,0 +1,2 @@
+#!/bin/bash
+sudo io -4 -l 0x8 0xFDC6001c

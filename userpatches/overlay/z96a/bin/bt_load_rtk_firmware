@@ -1,0 +1,75 @@
+#!/bin/bash
+# Z96A RTL8821CS: power combo WiFi/BT, reset BT rfkill, attach HCI on UART1.
+# rtk_hciattach MUST stay foreground (systemd Type=simple).
+
+set -u
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+BT_TTY_DEV="${BT_TTY_DEV:-/dev/ttyS1}"
+RTK_HCIATTACH="/usr/local/bin/rtk_hciattach"
+[ -x "$RTK_HCIATTACH" ] || RTK_HCIATTACH="$(command -v rtk_hciattach)"
+
+log() { echo "bt_load_rtk_firmware: $*"; }
+
+killall -q rtk_hciattach 2>/dev/null || true
+
+modprobe hci_uart 2>/dev/null || true
+# RTL8821CS is WiFi+BT combo — SDIO power must be up before UART attach.
+modprobe rtw88_8821cs 2>/dev/null || true
+for _ in $(seq 1 20); do
+	[[ -e /sys/bus/sdio/devices/mmc1:0001:1 ]] && break
+	sleep 1
+done
+
+rfkill_bt_reset() {
+	local rfkill_dev="" t n
+	for t in /sys/class/rfkill/rfkill*/name; do
+		[[ -f "$t" ]] || continue
+		n="$(cat "$t" 2>/dev/null || true)"
+		case "$n" in
+			*bt*|*BT*|*Bluetooth*|bt_default) rfkill_dev="${t%/name}"; break ;;
+		esac
+	done
+	if [[ -z "$rfkill_dev" ]]; then
+		for t in /sys/class/rfkill/rfkill*/type; do
+			[[ -f "$t" ]] || continue
+			[[ "$(cat "$t" 2>/dev/null)" = "bluetooth" ]] || continue
+			rfkill_dev="${t%/type}"
+			break
+		done
+	fi
+	if [[ -n "$rfkill_dev" && -f "${rfkill_dev}/state" ]]; then
+		log "reset rfkill ${rfkill_dev##*/} ($(cat "${rfkill_dev}/name" 2>/dev/null))"
+		echo 0 >"${rfkill_dev}/state"
+		sleep 2
+		echo 1 >"${rfkill_dev}/state"
+		sleep 2
+		return 0
+	fi
+	if [[ -f /sys/class/rfkill/rfkill0/state ]]; then
+		log "reset rfkill0 (legacy fallback)"
+		echo 0 >/sys/class/rfkill/rfkill0/state
+		sleep 2
+		echo 1 >/sys/class/rfkill/rfkill0/state
+		sleep 2
+	fi
+}
+
+rfkill_bt_reset
+command -v rfkill >/dev/null 2>&1 && rfkill unblock bluetooth 2>/dev/null || true
+
+for _ in $(seq 1 30); do
+	[[ -c "$BT_TTY_DEV" ]] && break
+	sleep 1
+done
+if [[ ! -c "$BT_TTY_DEV" ]]; then
+	log "missing $BT_TTY_DEV" >&2
+	exit 1
+fi
+if [[ ! -x "$RTK_HCIATTACH" ]]; then
+	log "rtk_hciattach not found" >&2
+	exit 1
+fi
+
+log "attach on $BT_TTY_DEV (firmware /lib/firmware/rtl_bt/rtl8821cs_*)"
+exec "$RTK_HCIATTACH" -n -s 115200 "$BT_TTY_DEV" rtk_h5

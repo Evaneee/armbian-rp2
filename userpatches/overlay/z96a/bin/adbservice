@@ -1,0 +1,75 @@
+#!/bin/bash
+gadget=gadget
+do_start(){
+    mount -t configfs none /sys/kernel/config
+    cd /sys/kernel/config/usb_gadget
+    if [[ ! -d ./${gadget} ]]; then
+        mkdir -p  ${gadget}
+    else
+        echo "gadget already exist"
+
+    fi
+    cd ${gadget}
+
+    echo "64" > bMaxPacketSize0
+    echo 0x0200 > bcdUSB
+    echo 0x0100 > bcdDevice
+
+    echo "0x888"  > idVendor
+    echo "0x888" > idProduct
+
+    mkdir -p strings/0x409
+
+    echo "76543210" > strings/0x409/serialnumber
+    echo "Sunniwell"  > strings/0x409/manufacturer
+    echo "z96a"  > strings/0x409/product
+    mkdir -p functions/ffs.adb
+    ln -s functions/ffs.adb configs/config.1
+    mkdir -p /dev/usb-ffs/adb
+    mount -t functionfs adb /dev/usb-ffs/adb
+    adbd &
+    if [[ ! -d configs/config.1 ]]; then
+        mkdir -p configs/config.1
+    fi
+
+    echo 120 > configs/config.1/MaxPower
+
+    if [[ ! -d configs/config.1/strings/0x409 ]]; then
+        mkdir -p configs/config.1/strings/0x409
+    fi
+
+    echo "z96acfg" > configs/config.1/strings/0x409/configuration
+    mkdir -p functions/ffs.adb
+    ln -s functions/ffs.adb configs/config.1
+    mkdir -p /dev/usb-ffs
+    mkdir -p /dev/usb-ffs/adb
+    mount -t functionfs adb /dev/usb-ffs/adb
+    adbd &
+    echo "sleep 3s"
+    sleep 3s
+
+    udc_name=$(ls /sys/class/udc)
+    echo UDC:$udc_name
+    echo "$udc_name" > UDC
+}
+do_stop() {
+        killall adbd
+        umount -f  /dev/usb-ffs/adb
+        umount -f  /sys/kernel/config
+        cd /sys/kernel/config/usb_gadget/${gadaget}
+        echo "" > UDC
+}
+
+case $1 in
+    start)
+        echo "Start hid gadget "
+        do_start
+        ;;
+    stop)
+        echo "Stop hid gadget"
+        do_stop
+        ;;
+    *)
+        echo "Usage: $0 (stop | start)"
+        ;;
+esac

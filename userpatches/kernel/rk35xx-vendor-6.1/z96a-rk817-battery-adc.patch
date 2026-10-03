@@ -1,0 +1,192 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Evan <evanee@local>
+Date: Sat, 3 Oct 2026 08:35:00 +0800
+Subject: [PATCH] rk817_battery: Z96A SARADC voltage + legacy OCV capacity
+
+Port old z96a-rk817.patch to vendor 6.1:
+- Read pack voltage from SARADC (io-channels = battery-voltage)
+- Capacity percent = vol2cap(mV) / (design_capacity/100)
+- Average 5 ADC samples; prefer iio processed mV when available
+- Fall back to PMIC fuel-gauge if ADC absent
+
+--- a/drivers/power/supply/rk817_battery.c
++++ b/drivers/power/supply/rk817_battery.c
+@@ -29,6 +29,10 @@
+ #include <linux/timer.h>
+ #include <linux/wakelock.h>
+ #include <linux/workqueue.h>
++#include <linux/delay.h>
++
++#include <linux/iio/consumer.h>
++#include <linux/iio/types.h>
+ 
+ static int dbg_enable;
+ 
+@@ -477,7 +481,15 @@
+ 	u32 trend_samples[TREND_SAMPLES];
+ };
+ 
++struct adc_info {
++	struct iio_channel *iio_chan;
++	u32 vol_ratio;
++	u32 ref_vol;
++	u32 vol_res;
++};
++
+ struct battery_platform_data {
++	struct adc_info adc;
+ 	u32 *ocv_table;
+ 	u32 ocv_size;
+ 	struct temp_chrg_table *tc_table;
+@@ -905,10 +917,48 @@
+ 	return vol;
+ }
+ 
++
++static bool rk817_bat_has_ext_adc(struct rk817_battery_device *battery)
++{
++	return battery->pdata && battery->pdata->adc.iio_chan &&
++	       !IS_ERR(battery->pdata->adc.iio_chan);
++}
++
++/* Pack voltage in mV via SARADC divider (legacy z96a-rk817.patch). */
++static int rk817_adc_get_battery_voltage(struct rk817_battery_device *battery)
++{
++	int i, ret, adc_value = 0, sum = 0, pin_mv, real_value;
++	struct adc_info *info = &battery->pdata->adc;
++
++	for (i = 0; i < 5; i++) {
++		ret = iio_read_channel_raw(info->iio_chan, &adc_value);
++		if (ret < 0)
++			return battery->voltage_avg > 0 ? battery->voltage_avg : 0;
++		sum += adc_value;
++		usleep_range(1000, 2000);
++	}
++	adc_value = sum / 5;
++
++	ret = iio_read_channel_processed(info->iio_chan, &pin_mv);
++	if (ret >= 0 && pin_mv > 0) {
++		real_value = pin_mv * info->vol_ratio / 1000;
++	} else {
++		if (!info->vol_res)
++			return 0;
++		pin_mv = (info->ref_vol * adc_value) / info->vol_res;
++		real_value = pin_mv * info->vol_ratio / 1000;
++	}
++
++	return real_value;
++}
++
+ static int rk817_bat_get_battery_voltage(struct rk817_battery_device *battery)
+ {
+ 	int vol, val = 0, vol_temp;
+ 
++	if (rk817_bat_has_ext_adc(battery))
++		return rk817_adc_get_battery_voltage(battery);
++
+ 	val = rk817_bat_field_read(battery, BAT_VOL_H) << 8;
+ 	val |= rk817_bat_field_read(battery, BAT_VOL_L) << 0;
+ 
+@@ -1262,6 +1312,24 @@
+ 	return capacity;
+ }
+ 
++/* Legacy Z96A: percent = vol2cap(mV) / (design_capacity / 100) */
++static int rk817_adc_get_capacity_percent(struct rk817_battery_device *battery)
++{
++	int vol, cap_mah, den, percent;
++
++	vol = rk817_adc_get_battery_voltage(battery);
++	cap_mah = rk817_bat_vol2cap(battery, vol);
++	den = battery->pdata->design_capacity / 100;
++	if (den <= 0)
++		den = 1;
++	percent = cap_mah / den;
++	if (percent < 0)
++		percent = 0;
++	else if (percent > 100)
++		percent = 100;
++	return percent;
++}
++
+ static void rk817_bat_save_dsoc(struct rk817_battery_device *battery,
+ 				int save_soc)
+ {
+@@ -2527,6 +2595,44 @@
+ 			return ret;
+ 	}
+ 
++	pdata->adc.iio_chan = ERR_PTR(-ENODEV);
++	{
++		enum iio_chan_type type;
++		struct iio_channel *chan;
++
++		chan = devm_iio_channel_get(dev, "battery-voltage");
++		if (IS_ERR(chan)) {
++			ret = PTR_ERR(chan);
++			if (ret == -EPROBE_DEFER)
++				return ret;
++			dev_info(dev, "no external battery-voltage ADC, use PMIC FG\n");
++		} else {
++			ret = iio_get_channel_type(chan, &type);
++			if (ret < 0 || type != IIO_VOLTAGE) {
++				dev_err(dev, "battery-voltage iio channel error\n");
++				return -EINVAL;
++			}
++			ret = of_property_read_u32(np, "adc_vol_ratio", &pdata->adc.vol_ratio);
++			if (ret) {
++				dev_err(dev, "adc_vol_ratio missing\n");
++				return -EINVAL;
++			}
++			ret = of_property_read_u32(np, "adc_ref_vol", &pdata->adc.ref_vol);
++			if (ret) {
++				dev_err(dev, "adc_ref_vol missing\n");
++				return -EINVAL;
++			}
++			ret = of_property_read_u32(np, "adc_res", &pdata->adc.vol_res);
++			if (ret) {
++				dev_err(dev, "adc_res missing\n");
++				return -EINVAL;
++			}
++			pdata->adc.iio_chan = chan;
++			dev_info(dev, "battery voltage via SARADC (ratio=%u ref=%u res=%u)\n",
++				 pdata->adc.vol_ratio, pdata->adc.ref_vol, pdata->adc.vol_res);
++		}
++	}
++
+ 	DBG("the battery dts info dump:\n"
+ 	    "bat_res:%d\n"
+ 	    "res_sample:%d\n"
+@@ -2573,7 +2679,10 @@
+ 	if (battery->pdata->bat_mode == MODE_VIRTUAL)
+ 		return POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+ 
+-	dsoc = (battery->dsoc + 500) / 1000;
++	if (rk817_bat_has_ext_adc(battery))
++		dsoc = rk817_adc_get_capacity_percent(battery);
++	else
++		dsoc = (battery->dsoc + 500) / 1000;
+ 	if (dsoc < 1 && battery->current_avg < 0)
+ 		return POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+ 	else if (dsoc <= 20)
+@@ -2618,12 +2727,18 @@
+ 			val->intval = VIRTUAL_CURRENT * 1000;
+ 		break;
+ 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+-		val->intval = battery->voltage_avg * 1000;/*uV*/
++		if (rk817_bat_has_ext_adc(battery))
++			val->intval = rk817_adc_get_battery_voltage(battery) * 1000;
++		else
++			val->intval = battery->voltage_avg * 1000;/*uV*/
+ 		if (battery->pdata->bat_mode == MODE_VIRTUAL)
+ 			val->intval = VIRTUAL_VOLTAGE * 1000;
+ 		break;
+ 	case POWER_SUPPLY_PROP_CAPACITY:
+-		val->intval = (battery->dsoc + 400) / 1000;
++		if (rk817_bat_has_ext_adc(battery))
++			val->intval = rk817_adc_get_capacity_percent(battery);
++		else
++			val->intval = (battery->dsoc + 400) / 1000;
+ 		if (battery->pdata->bat_mode == MODE_VIRTUAL)
+ 			val->intval = VIRTUAL_SOC;
+ 		break;

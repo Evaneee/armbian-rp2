@@ -1,0 +1,24 @@
+#!/bin/bash
+# Quick lid / blank diagnostics for Z96A.
+set -euo pipefail
+echo "=== modules ==="
+lsmod | grep -E 'gpio_keys|gpio-keys' || echo "gpio_keys NOT loaded"
+echo "=== modprobe ==="
+modprobe gpio_keys 2>&1 || true
+echo "=== input Lid ==="
+grep -A5 -i 'lid\|gpio.key\|gpio-keys' /proc/bus/input/devices || echo "no Lid in /proc/bus/input/devices"
+echo "=== logind LidIsClosed (toggle lid now) ==="
+for i in 1 2 3 4 5 6; do
+	busctl get-property org.freedesktop.login1 /org/freedesktop/login1 \
+		org.freedesktop.login1.Manager LidIsClosed 2>/dev/null || echo "logind n/a"
+	sleep 1
+done
+echo "=== backlight ==="
+ls -d /sys/class/backlight/* 2>/dev/null || echo "no backlight"
+echo "=== logind lid conf ==="
+cat /etc/systemd/logind.conf.d/10-z96a-lid.conf 2>/dev/null || echo "missing 10-z96a-lid.conf"
+echo "=== z96a-lid-blank ==="
+systemctl is-enabled z96a-lid-blank.service 2>/dev/null || echo "service not enabled"
+systemctl --no-pager -l status z96a-lid-blank.service 2>/dev/null | head -20 || true
+echo "=== dmesg gpio-keys ==="
+dmesg | grep -iE 'gpio-keys|gpio_key|Lid' | tail -20 || true

@@ -1,0 +1,19 @@
+[Unit]
+Description=Z96A Bluetooth ready (attach HCI then start BlueZ)
+# Attach unit is started/restarted by the script; do not hard-Require it here.
+After=local-fs.target sysinit.target network.target bluetooth-rtl8821cs.service
+Wants=bluetooth-rtl8821cs.service
+# Finish before DM/desktop so Blueman/GNOME BT UI sees hci0.
+Before=display-manager.service graphical.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/z96a-bt-post
+RemainAfterExit=yes
+# stop BT + re-attach + wait hci0 + start bluetoothd
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

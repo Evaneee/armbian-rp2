@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Z96A PipeWire/Pulse sink
+Comment=Prefer RK817 speakers over HDMI
+Exec=/usr/local/bin/z96a-set-pipewire-sink
+X-GNOME-Autostart-Delay=3
+X-GNOME-Autostart-enabled=true
+NoDisplay=true

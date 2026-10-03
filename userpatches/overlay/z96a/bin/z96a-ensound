@@ -1,0 +1,105 @@
+#!/bin/bash
+# Force Z96A speaker path on the RK817 codec card (not a hardcoded card index).
+# Speaker amp AW8737 is gated by GPIO3_PA6 via codec "spk-ctl-gpios";
+# that GPIO only goes high when Playback Path is SPK / SPK_HP.
+#
+# Desktop (PipeWire) + rockchip_headset often flip the path back to HP/OFF
+# right after boot — keep re-applying for a while.
+
+set -u
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+log() { echo "z96a-ensound: $*"; }
+
+find_card() {
+	local CARD="" c n
+	while read -r idx name rest; do
+		case "$name" in
+			*[Rr][Kk]817*|*[Rr][Kk]809*) CARD="$idx"; break ;;
+		esac
+	done < <(grep -E '^ *[0-9]+ ' /proc/asound/cards 2>/dev/null || true)
+
+	if [[ -z "$CARD" ]]; then
+		for c in /proc/asound/card[0-9]*; do
+			[[ -d "$c" ]] || continue
+			n="${c##*card}"
+			if amixer -c "$n" sget 'Playback Path' >/dev/null 2>&1; then
+				CARD="$n"
+				break
+			fi
+		done
+	fi
+	printf '%s' "$CARD"
+}
+
+apply_spk() {
+	local CARD="$1"
+	amixer -c "$CARD" -q set 'Playback Path' SPK \
+		|| amixer -c "$CARD" -q set 'Playback Path' SPK_HP \
+		|| return 1
+	for ctl in Master Speaker Headphone 'DAC' 'Playback'; do
+		amixer -c "$CARD" -q set "$ctl" unmute 2>/dev/null || true
+		amixer -c "$CARD" -q set "$ctl" 80% 2>/dev/null || true
+	done
+	mkdir -p /etc/alsa
+	echo "$CARD" > /run/z96a-alsa-card
+	cat > /etc/asound.conf <<EOF
+pcm.!default {
+	type plug
+	slave.pcm "qhw"
+}
+pcm.qhw {
+	type hw
+	card $CARD
+}
+ctl.!default {
+	type hw
+	card $CARD
+}
+EOF
+	return 0
+}
+
+# Wait for ALSA cards (PipeWire/desktop may race first boot)
+for _ in $(seq 1 45); do
+	[[ -d /proc/asound ]] && [[ -n "$(find_card)" ]] && break
+	sleep 1
+done
+
+CARD="$(find_card)"
+if [[ -z "$CARD" ]]; then
+	log "ERROR: no RK817 / Playback Path card found"
+	cat /proc/asound/cards 2>/dev/null || true
+	exit 1
+fi
+
+log "using ALSA card $CARD"
+# Re-apply for ~90s so headset_observe / PipeWire cannot leave amp GPIO off.
+log "holding Playback Path=SPK for ~90s (not hung; waiting out desktop audio races)"
+deadline=$((SECONDS + 90))
+ok=0
+last_log=$SECONDS
+while (( SECONDS < deadline )); do
+	CARD="$(find_card)"
+	[[ -n "$CARD" ]] || { sleep 2; continue; }
+	if apply_spk "$CARD"; then
+		ok=1
+		cur="$(amixer -c "$CARD" sget 'Playback Path' 2>/dev/null | sed -n "s/.*Item0: '\\(.*\\)'.*/\\1/p" | head -1)"
+		if (( SECONDS - last_log >= 15 )); then
+			log "still holding card $CARD path=${cur:-?} (${SECONDS}s)"
+			last_log=$SECONDS
+		fi
+		[[ "$cur" == "SPK" || "$cur" == "SPK_HP" ]] && sleep 2 || sleep 1
+	else
+		sleep 2
+	fi
+done
+
+if (( ok == 0 )); then
+	log "ERROR: failed to set Playback Path on card $CARD"
+	exit 1
+fi
+
+log "Playback Path held on card $CARD; spk-ctl GPIO should be driven by codec"
+amixer -c "$CARD" sget 'Playback Path' 2>/dev/null || true
+exit 0

@@ -1,0 +1,15 @@
+[Unit]
+Description=Z96A lid close → blank backlight (no suspend)
+After=systemd-logind.service
+Wants=systemd-logind.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/z96a-lid-blank
+ExecStartPre=-/sbin/modprobe gpio_keys
+ExecStart=/usr/local/bin/z96a-lid-blank
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

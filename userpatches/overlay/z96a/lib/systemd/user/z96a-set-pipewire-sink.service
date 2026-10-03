@@ -1,0 +1,14 @@
+[Unit]
+Description=Z96A default audio sink (RK817 speakers)
+# Work with PipeWire (GNOME) or PulseAudio (Cinnamon on noble).
+After=default.target sound.target pipewire-pulse.service pulseaudio.service wireplumber.service
+Wants=
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/z96a-set-pipewire-sink
+RemainAfterExit=yes
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

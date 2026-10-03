@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""Blank eDP backlight when lid is closed; restore when opened. Never suspends."""
+from __future__ import annotations
+
+import glob
+import os
+import select
+import struct
+import subprocess
+import time
+
+EVENT_FMT = "llHHi"
+EVENT_SIZE = struct.calcsize(EVENT_FMT)
+EV_SW, SW_LID = 0x05, 0x00
+
+INVERT = os.environ.get("Z96A_LID_INVERT", "0") in ("1", "true", "yes")
+
+
+def backlight_dir() -> str | None:
+	for d in sorted(glob.glob("/sys/class/backlight/*")):
+		if os.path.isfile(f"{d}/brightness") and os.path.isfile(f"{d}/max_brightness"):
+			return d
+	return None
+
+
+def ensure_gpio_keys() -> None:
+	subprocess.run(
+		["modprobe", "gpio_keys"],
+		check=False,
+		stdout=subprocess.DEVNULL,
+		stderr=subprocess.DEVNULL,
+	)
+
+
+def lid_from_logind() -> bool | None:
+	try:
+		out = subprocess.check_output(
+			[
+				"busctl",
+				"get-property",
+				"org.freedesktop.login1",
+				"/org/freedesktop/login1",
+				"org.freedesktop.login1.Manager",
+				"LidIsClosed",
+			],
+			stderr=subprocess.DEVNULL,
+			text=True,
+		).strip()
+		val = out.split()[-1]
+		if val in ("true", "false"):
+			closed = val == "true"
+			return (not closed) if INVERT else closed
+	except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
+		pass
+	return None
+
+
+def find_lid_event() -> str | None:
+	"""Return /dev/input/eventN for Lid / SW_LID."""
+	name_hit = None
+	cap_hit = None
+	handlers = None
+	name = None
+	sw_caps = None
+	try:
+		with open("/proc/bus/input/devices", encoding="utf-8", errors="replace") as f:
+			for raw in f:
+				line = raw.rstrip("\n")
+				if line.startswith("N: Name="):
+					name = line.split("=", 1)[1].strip().strip('"')
+				elif line.startswith("H: Handlers="):
+					handlers = line.split("=", 1)[1].split()
+				elif line.startswith("B: SW="):
+					sw_caps = line.split("=", 1)[1].strip()
+				elif line == "" and handlers is not None:
+					ev = next((h for h in handlers if h.startswith("event")), None)
+					if ev:
+						path = f"/dev/input/{ev}"
+						has_lid = False
+						if sw_caps:
+							try:
+								has_lid = bool(int(sw_caps.split()[-1], 16) & 1)
+							except ValueError:
+								has_lid = False
+						if name and "lid" in name.lower():
+							name_hit = path
+						elif has_lid:
+							cap_hit = path
+					handlers = None
+					name = None
+					sw_caps = None
+	except OSError:
+		return None
+	return name_hit or cap_hit
+
+
+def blank_set(bl: str, blank: bool, saved: list[str]) -> None:
+	bpath = f"{bl}/brightness"
+	if blank:
+		if not saved:
+			try:
+				with open(bpath, encoding="utf-8") as f:
+					saved.append(f.read().strip() or "0")
+			except OSError:
+				saved.append("0")
+		try:
+			with open(bpath, "w", encoding="utf-8") as f:
+				f.write("0\n")
+		except OSError:
+			pass
+		for fb in ("/sys/class/graphics/fb0/blank", "/sys/class/graphics/fb1/blank"):
+			try:
+				with open(fb, "w", encoding="utf-8") as f:
+					f.write("1\n")
+			except OSError:
+				pass
+	else:
+		for fb in ("/sys/class/graphics/fb0/blank", "/sys/class/graphics/fb1/blank"):
+			try:
+				with open(fb, "w", encoding="utf-8") as f:
+					f.write("0\n")
+			except OSError:
+				pass
+		val = saved[0] if saved else None
+		if not val or val == "0":
+			try:
+				with open(f"{bl}/max_brightness", encoding="utf-8") as f:
+					val = f.read().strip()
+			except OSError:
+				val = "100"
+		try:
+			with open(bpath, "w", encoding="utf-8") as f:
+				f.write(f"{val}\n")
+		except OSError:
+			pass
+		saved.clear()
+
+
+def main() -> int:
+	ensure_gpio_keys()
+	bl = backlight_dir()
+	if not bl:
+		print("z96a-lid-blank: no backlight sysfs; sleeping forever", flush=True)
+		while True:
+			time.sleep(3600)
+		return 0
+
+	saved: list[str] = []
+	blanked = False
+	print(f"z96a-lid-blank: backlight={bl} invert={INVERT}", flush=True)
+
+	def apply(closed: bool) -> None:
+		nonlocal blanked
+		if closed and not blanked:
+			blank_set(bl, True, saved)
+			blanked = True
+			print("z96a-lid-blank: lid closed → blank", flush=True)
+		elif not closed and blanked:
+			blank_set(bl, False, saved)
+			blanked = False
+			print("z96a-lid-blank: lid open → restore", flush=True)
+
+	ev_fd = None
+	ev_path = None
+	last_probe = 0.0
+
+	while True:
+		now = time.time()
+		if ev_fd is None and now - last_probe >= 2.0:
+			last_probe = now
+			ensure_gpio_keys()
+			ev_path = find_lid_event()
+			if ev_path:
+				try:
+					ev_fd = open(ev_path, "rb", buffering=0)  # noqa: SIM115
+					print(f"z96a-lid-blank: watching {ev_path}", flush=True)
+					# Sync from logind once device exists
+					st = lid_from_logind()
+					if st is not None:
+						apply(st)
+				except OSError as e:
+					print(f"z96a-lid-blank: open {ev_path} failed: {e}", flush=True)
+					ev_fd = None
+
+		if ev_fd is not None:
+			try:
+				r, _, _ = select.select([ev_fd], [], [], 1.0)
+				if r:
+					data = ev_fd.read(EVENT_SIZE)
+					if data and len(data) == EVENT_SIZE:
+						_s, _us, typ, code, value = struct.unpack(EVENT_FMT, data)
+						if typ == EV_SW and code == SW_LID:
+							closed = bool(value)
+							if INVERT:
+								closed = not closed
+							apply(closed)
+				# Periodic logind sync (catches missed events)
+				st = lid_from_logind()
+				if st is not None:
+					apply(st)
+			except OSError as e:
+				print(f"z96a-lid-blank: event read error: {e}", flush=True)
+				try:
+					ev_fd.close()
+				except Exception:
+					pass
+				ev_fd = None
+			continue
+
+		# No lid input device yet — do not trust logind (stays false without SW_LID).
+		time.sleep(1.0)
+
+
+if __name__ == "__main__":
+	raise SystemExit(main())

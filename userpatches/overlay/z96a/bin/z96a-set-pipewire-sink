@@ -1,0 +1,45 @@
+#!/bin/bash
+# Point PipeWire/Pulse default output at the RK817 speaker card (not HDMI/BT).
+# speaker-test uses ALSA directly; browsers/video players use PipeWire.
+
+set -u
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
+
+log() { echo "z96a-set-pipewire-sink: $*"; }
+
+for _ in $(seq 1 90); do
+	pactl info >/dev/null 2>&1 && break
+	sleep 1
+done
+if ! pactl info >/dev/null 2>&1; then
+	log "pipewire-pulse not available yet"
+	exit 0
+fi
+
+pick_sink() {
+	pactl list sinks short 2>/dev/null | awk '
+		tolower($0) ~ /rk817|rk809_ext|rk817_ext/ { print $1; exit }
+	'
+}
+
+SINK="$(pick_sink)"
+if [[ -z "$SINK" ]]; then
+	SINK=$(pactl list sinks short 2>/dev/null | awk '
+		tolower($0) ~ /hdmi|hdmia|iec958|spdif|bt|bluetooth|sco|dummy|monitor/ { next }
+		{ print $1; exit }
+	')
+fi
+
+if [[ -z "$SINK" ]]; then
+	log "no suitable sink found:"
+	pactl list sinks short 2>/dev/null || true
+	exit 1
+fi
+
+NAME="$(pactl list sinks short 2>/dev/null | awk -v s="$SINK" '$1 == s { print $2; exit }')"
+pactl set-default-sink "$SINK"
+pactl set-sink-mute "$SINK" 0 2>/dev/null || true
+pactl set-sink-volume "$SINK" 80% 2>/dev/null || true
+log "default sink -> $SINK ($NAME)"
+exit 0

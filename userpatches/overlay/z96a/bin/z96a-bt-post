@@ -1,0 +1,48 @@
+#!/bin/bash
+# Z96A RTL8821CS bring-up sequence (verified on device):
+#   stop bluetooth → restart rtk_hciattach → wait hci0 → start bluetooth → power on
+#
+# Never use "btmgmt/bluetoothctl power off" on this chip with Rockchip rfkill:
+# that asserts BT_RESET and wipes firmware until a full re-attach.
+
+set -u
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+log() { echo "z96a-bt-post: $*"; }
+
+log "stop bluetooth.service"
+systemctl stop bluetooth.service 2>/dev/null || true
+
+log "restart bluetooth-rtl8821cs.service (rtk_hciattach)"
+systemctl restart bluetooth-rtl8821cs.service
+
+log "wait for hci0"
+found=0
+for _ in $(seq 1 45); do
+	if [[ -d /sys/class/bluetooth/hci0 ]]; then
+		found=1
+		break
+	fi
+	sleep 1
+done
+ls /sys/class/bluetooth/ 2>/dev/null || true
+if [[ "$found" -ne 1 ]]; then
+	log "hci0 not found after attach" >&2
+	systemctl --no-pager --full status bluetooth-rtl8821cs.service 2>/dev/null || true
+	exit 1
+fi
+
+command -v rfkill >/dev/null 2>&1 && rfkill unblock bluetooth 2>/dev/null || true
+
+log "start bluetooth.service"
+systemctl start bluetooth.service
+sleep 2
+
+if command -v bluetoothctl >/dev/null 2>&1; then
+	# Non-interactive; do not power-cycle (power off breaks Realtek firmware).
+	bluetoothctl power on 2>/dev/null || true
+	bluetoothctl show 2>/dev/null || true
+fi
+
+log "done"
+exit 0

@@ -1,0 +1,39 @@
+#!/bin/bash
+# Fix blueman 2.3.x: tray click used ActivateAction("Activate") which does not
+# exist → GDBus InvalidArgs / multi-minute hang (and can keep a core busy).
+set -euo pipefail
+TARGET="/usr/lib/python3/dist-packages/blueman/main/DBusProxies.py"
+[[ -f "$TARGET" ]] || exit 0
+grep -q 'Unknown action' "$TARGET" 2>/dev/null && exit 0
+grep -q '_call_action("Activate")' "$TARGET" || exit 0
+
+python3 - "$TARGET" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+t = p.read_text()
+old = '''    def startstop(self) -> None:
+        if self.get_name_owner() is None:
+            self._call_action("Activate")
+        else:
+            self._call_action("Quit")
+'''
+new = '''    def startstop(self) -> None:
+        def call_finish(proxy: "ManagerService", resp: Gio.AsyncResult) -> None:
+            try:
+                proxy.call_finish(resp)
+            except GLib.Error:
+                pass
+
+        if self.get_name_owner() is None:
+            # org.freedesktop.Application.Activate — NOT ActivateAction("Activate")
+            param = GLib.Variant("(a{sv})", ({},))
+            self.call("Activate", param, Gio.DBusCallFlags.NONE, 15000, None, call_finish)
+        else:
+            self._call_action("Quit")
+'''
+if old not in t:
+    raise SystemExit(f"pattern not found in {p}")
+p.write_text(t.replace(old, new, 1))
+print(f"patched {p}")
+PY

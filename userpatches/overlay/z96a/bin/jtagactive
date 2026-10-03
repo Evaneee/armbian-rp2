@@ -1,0 +1,8 @@
+#!/bin/bash
+sudo io -4 -w 0xFDC6001C 0x30002110		#iomul配置引脚
+sudo io -4 -w 0xFDC60020 0x30030112		#iomul配置引脚
+sudo io -4 -l 0x8 0xFDC6001c			#查询引脚
+
+for i in `seq 0 3`; do
+	echo 1 > /sys/devices/system/cpu/cpu$i/cpuidle/state1/disable
+done

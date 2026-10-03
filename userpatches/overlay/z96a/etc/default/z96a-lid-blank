@@ -1,0 +1,2 @@
+# Set to 1 if lid polarity is inverted (screen blanks when open).
+Z96A_LID_INVERT=0

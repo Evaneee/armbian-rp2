@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Evan <evanee@local>
+Date: Sat, 3 Oct 2026 08:15:00 +0800
+Subject: [PATCH] mfd: rk808: RK817 real power-off via SYS_CFG3 DEV_OFF
+
+Z96A / mainline U-Boot + PSCI: poweroff left the power LED on because
+RK817 never wrote DEV_OFF (bit0 of SYS_CFG3). Only SLPPIN GPIO was used,
+and PSCI SYSTEM_OFF can float that pin before rails drop.
+
+Mirror U-Boot rk8xx sysreset: write DEV_OFF in shutdown_prepare and
+register syscore shutdown for RK817/RK809.
+
+--- a/drivers/mfd/rk808.c
++++ b/drivers/mfd/rk808.c
+@@ -969,11 +969,30 @@
+ 				 RK817_SLPPIN_FUNC_MSK, SLPPIN_DN_FUN);
+ 	if (ret)
+ 		dev_err(&rk808_i2c_client->dev, "Failed to shutdown device!\n");
++	/* Latch DEV_OFF before PSCI/ATF may float the sleep GPIO */
++	ret = regmap_update_bits(rk808->regmap, RK817_SYS_CFG(3), BIT(0), BIT(0));
++	if (ret)
++		dev_err(&rk808_i2c_client->dev, "Failed to set RK817 DEV_OFF!\n");
+ 	/* pmic need the SCL clock to synchronize register */
+ 	mdelay(2);
+ 	return ret;
+ }
+ 
++/* RK817/RK809: SYS_CFG3 bit0 is DEV_OFF (same as U-Boot rk8xx sysreset).
++ * Relying only on SLPPIN GPIO fails with mainline PSCI SYSTEM_OFF: SoC rails
++ * drop and the sleep pin can float before the PMIC cuts power, leaving the
++ * power LED on. Writing DEV_OFF latches power-off in the PMIC itself.
++ */
++static void rk817_device_shutdown(void)
++{
++	int ret;
++	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
++
++	ret = regmap_update_bits(rk808->regmap, RK817_SYS_CFG(3), BIT(0), BIT(0));
++	if (ret)
++		dev_err(&rk808_i2c_client->dev, "Failed to shutdown RK817!\n");
++}
++
+ static void rk8xx_device_shutdown(void)
+ {
+ 	int ret;
+@@ -1447,6 +1466,7 @@
+ 		on_source = RK817_ON_SOURCE_REG;
+ 		off_source = RK817_OFF_SOURCE_REG;
+ 		of_property_prepare_fn = rk817_of_property_prepare;
++		device_shutdown_fn = rk817_device_shutdown;
+ 		break;
+ 	default:
+ 		dev_err(&client->dev, "Unsupported RK8XX ID %lu\n",
