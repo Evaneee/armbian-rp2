@@ -1,0 +1,195 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Evan <evan@local>
+Date: Mon, 5 Oct 2026 11:00:00 +0800
+Subject: [PATCH] arm64: dts: rockchip: rk356x: add MPP service nodes for rkmpp
+
+Add mpp-service + MPP-compatible vdpu/vepu/rkvdec/rkvenc/jpegd nodes
+(from vendor rk356x.dtsi) so edge can bind rk_vcodec and expose
+/dev/mpp_service. vdec_sram comes from rk356x-add-rkvdec2-support.patch.
+Nodes default to disabled; boards enable them and should
+disable conflicting V4L2 vpu/vepu/vdec nodes.
+
+--- a/arch/arm64/boot/dts/rockchip/rk356x-base.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk356x-base.dtsi
+@@ -403,6 +403,13 @@
+ 		reg = <0x0 0xfdca8000 0x0 0x8000>;
+ 	};
+ 
++	mpp_srv: mpp-srv {
++		compatible = "rockchip,mpp-service";
++		rockchip,taskqueue-count = <6>;
++		rockchip,resetgroup-count = <6>;
++		status = "disabled";
++	};
++
+ 	pmucru: clock-controller@fdd00000 {
+ 		compatible = "rockchip,rk3568-pmucru";
+ 		reg = <0x0 0xfdd00000 0x0 0x1000>;
+@@ -608,6 +628,24 @@
+ 		#iommu-cells = <0>;
+ 	};
+ 
++	/* MPP vdpu — same silicon as V4L2 vpu; enable on boards using rkmpp */
++	vdpu: vdpu@fdea0400 {
++		compatible = "rockchip,vpu-decoder-v2";
++		reg = <0x0 0xfdea0400 0x0 0x400>;
++		interrupts = <GIC_SPI 139 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "irq_dec";
++		clocks = <&cru ACLK_VPU>, <&cru HCLK_VPU>;
++		clock-names = "aclk_vcodec", "hclk_vcodec";
++		resets = <&cru SRST_A_VPU>, <&cru SRST_H_VPU>;
++		reset-names = "video_a", "video_h";
++		iommus = <&vdpu_mmu>;
++		power-domains = <&power RK3568_PD_VPU>;
++		rockchip,srv = <&mpp_srv>;
++		rockchip,taskqueue-node = <0>;
++		rockchip,resetgroup-node = <0>;
++		status = "disabled";
++	};
++
+ 	rga: rga@fdeb0000 {
+ 		compatible = "rockchip,rk3568-rga", "rockchip,rk3288-rga";
+ 		reg = <0x0 0xfdeb0000 0x0 0x180>;
+@@ -639,6 +677,52 @@
+ 		#iommu-cells = <0>;
+ 	};
+ 
++	vepu_mpp: vepu-mpp@fdee0000 {
++		compatible = "rockchip,vpu-encoder-v2";
++		reg = <0x0 0xfdee0000 0x0 0x400>;
++		interrupts = <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&cru ACLK_JENC>, <&cru HCLK_JENC>;
++		clock-names = "aclk_vcodec", "hclk_vcodec";
++		rockchip,disable-auto-freq;
++		resets = <&cru SRST_A_JENC>, <&cru SRST_H_JENC>;
++		reset-names = "video_a", "video_h";
++		iommus = <&vepu_mmu>;
++		rockchip,srv = <&mpp_srv>;
++		rockchip,taskqueue-node = <2>;
++		rockchip,resetgroup-node = <2>;
++		power-domains = <&power RK3568_PD_RGA>;
++		status = "disabled";
++	};
++
++	jpegd: jpegd@fded0000 {
++		compatible = "rockchip,rkv-jpeg-decoder-v1";
++		reg = <0x0 0xfded0000 0x0 0x400>;
++		interrupts = <GIC_SPI 62 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&cru ACLK_JDEC>, <&cru HCLK_JDEC>;
++		clock-names = "aclk_vcodec", "hclk_vcodec";
++		rockchip,disable-auto-freq;
++		resets = <&cru SRST_A_JDEC>, <&cru SRST_H_JDEC>;
++		reset-names = "video_a", "video_h";
++		iommus = <&jpegd_mmu>;
++		rockchip,srv = <&mpp_srv>;
++		rockchip,taskqueue-node = <1>;
++		rockchip,resetgroup-node = <1>;
++		power-domains = <&power RK3568_PD_RGA>;
++		status = "disabled";
++	};
++
++	jpegd_mmu: iommu@fded0480 {
++		compatible = "rockchip,rk3568-iommu";
++		reg = <0x0 0xfded0480 0x0 0x40>;
++		interrupts = <GIC_SPI 61 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "jpegd_mmu";
++		clock-names = "aclk", "iface";
++		clocks = <&cru ACLK_JDEC>, <&cru HCLK_JDEC>;
++		power-domains = <&power RK3568_PD_RGA>;
++		#iommu-cells = <0>;
++		status = "disabled";
++	};
++
+ 	vicap: video-capture@fdfe0000 {
+ 		compatible = "rockchip,rk3568-vicap";
+ 		reg = <0x0 0xfdfe0000 0x0 0x200>;
+@@ -697,6 +781,89 @@
+ 		status = "disabled";
+ 	};
+ 
++	/* MPP rkvdec — disable V4L2 &vdec on boards that enable this */
++	rkvdec: rkvdec@fdf80200 {
++		compatible = "rockchip,rkv-decoder-rk3568", "rockchip,rkv-decoder-v2";
++		reg = <0x0 0xfdf80200 0x0 0x400>, <0x0 0xfdf80100 0x0 0x100>;
++		reg-names = "regs", "link";
++		interrupts = <GIC_SPI 91 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "irq_dec";
++		clocks = <&cru ACLK_RKVDEC>, <&cru HCLK_RKVDEC>,
++			 <&cru CLK_RKVDEC_CA>, <&cru CLK_RKVDEC_CORE>,
++			 <&cru CLK_RKVDEC_HEVC_CA>;
++		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_cabac",
++			      "clk_core", "clk_hevc_cabac";
++		rockchip,normal-rates = <297000000>, <0>, <297000000>,
++					<297000000>, <600000000>;
++		resets = <&cru SRST_A_RKVDEC>, <&cru SRST_H_RKVDEC>,
++			 <&cru SRST_RKVDEC_CA>, <&cru SRST_RKVDEC_CORE>,
++			 <&cru SRST_RKVDEC_HEVC_CA>;
++		assigned-clocks = <&cru ACLK_RKVDEC>, <&cru CLK_RKVDEC_CA>,
++				  <&cru CLK_RKVDEC_CORE>, <&cru CLK_RKVDEC_HEVC_CA>;
++		assigned-clock-rates = <297000000>, <297000000>, <297000000>, <297000000>;
++		reset-names = "video_a", "video_h", "video_cabac",
++			      "video_core", "video_hevc_cabac";
++		power-domains = <&power RK3568_PD_RKVDEC>;
++		iommus = <&rkvdec_mmu>;
++		rockchip,srv = <&mpp_srv>;
++		rockchip,taskqueue-node = <4>;
++		rockchip,resetgroup-node = <4>;
++		rockchip,sram = <&vdec_sram>;
++		rockchip,task-capacity = <16>;
++		rockchip,skip-pmu-idle-request;
++		status = "disabled";
++	};
++
++	rkvdec_mmu: iommu@fdf80800 {
++		compatible = "rockchip,rk3568-iommu";
++		reg = <0x0 0xfdf80800 0x0 0x40>, <0x0 0xfdf80840 0x0 0x40>;
++		interrupts = <GIC_SPI 92 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "rkvdec_mmu";
++		clocks = <&cru ACLK_RKVDEC>, <&cru HCLK_RKVDEC>;
++		clock-names = "aclk", "iface";
++		power-domains = <&power RK3568_PD_RKVDEC>;
++		#iommu-cells = <0>;
++		status = "disabled";
++	};
++
++	rkvenc: rkvenc@fdf40000 {
++		compatible = "rockchip,rkv-encoder-v1";
++		reg = <0x0 0xfdf40000 0x0 0x400>;
++		interrupts = <GIC_SPI 140 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "irq_enc";
++		clocks = <&cru ACLK_RKVENC>, <&cru HCLK_RKVENC>,
++			<&cru CLK_RKVENC_CORE>;
++		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_core";
++		rockchip,normal-rates = <297000000>, <0>, <297000000>;
++		resets = <&cru SRST_A_RKVENC>, <&cru SRST_H_RKVENC>,
++			<&cru SRST_RKVENC_CORE>;
++		reset-names = "video_a", "video_h", "video_core";
++		assigned-clocks = <&cru ACLK_RKVENC>, <&cru CLK_RKVENC_CORE>;
++		assigned-clock-rates = <297000000>, <297000000>;
++		iommus = <&rkvenc_mmu>;
++		rockchip,srv = <&mpp_srv>;
++		rockchip,taskqueue-node = <3>;
++		rockchip,resetgroup-node = <3>;
++		power-domains = <&power RK3568_PD_RKVENC>;
++		rockchip,skip-pmu-idle-request;
++		status = "disabled";
++	};
++
++	rkvenc_mmu: iommu@fdf40f00 {
++		compatible = "rockchip,rk3568-iommu";
++		reg = <0x0 0xfdf40f00 0x0 0x40>, <0x0 0xfdf40f40 0x0 0x40>;
++		interrupts = <GIC_SPI 141 IRQ_TYPE_LEVEL_HIGH>,
++			<GIC_SPI 142 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "rkvenc_mmu0", "rkvenc_mmu1";
++		clocks = <&cru ACLK_RKVENC>, <&cru HCLK_RKVENC>;
++		clock-names = "aclk", "iface";
++		rockchip,disable-mmu-reset;
++		#iommu-cells = <0>;
++		power-domains = <&power RK3568_PD_RKVENC>;
++		status = "disabled";
++	};
++
++
+ 	gmac1: ethernet@fe010000 {
+ 		compatible = "rockchip,rk3568-gmac", "snps,dwmac-4.20a";
+ 		reg = <0x0 0xfe010000 0x0 0x10000>;

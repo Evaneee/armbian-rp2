@@ -1,8 +1,0 @@
-[org/blueman/plugins/powermanager]
-auto-power-on=false
-
-[org/blueman/general]
-# KillSwitch treats Rockchip rfkill as "BT off" and makes Manager hide the
-# window while SetBluetoothStatus blocks for minutes.
-plugin-list=['!KillSwitch']
-window-properties=[640, 480, 80, 80]

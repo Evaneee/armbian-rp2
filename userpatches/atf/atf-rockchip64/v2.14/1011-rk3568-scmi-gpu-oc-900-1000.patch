@@ -1,0 +1,14 @@
+Subject: [PATCH] rk3568: SCMI GPU add 900/1000 MHz OC
+
+--- a/plat/rockchip/rk3568/drivers/scmi/rk3568_clk.c
++++ b/plat/rockchip/rk3568/drivers/scmi/rk3568_clk.c
+@@ -176,6 +176,9 @@
+ 
+ static struct pvtpll_table rk3568_gpu_pvtpll_table[] = {
+ 	/* rate_hz, length */
++	/* OC: may raise heat; use with DTS opp 900@1.05V / 1000@1.10V */
++	ROCKCHIP_GPU_PVTPLL(1000000000, 0x1db),
++	ROCKCHIP_GPU_PVTPLL(900000000, 0x1db),
+ 	ROCKCHIP_GPU_PVTPLL(800000000, 0x1db),
+ 	ROCKCHIP_GPU_PVTPLL(700000000, 0x1db),
+ 	ROCKCHIP_GPU_PVTPLL(600000000, 0x1db),

@@ -1,0 +1,13 @@
+# Desktop Icons NG (DING) must stay enabled — it owns the desktop
+# right-click menu (New Folder, Open in Terminal, Properties, …).
+# Previously disabled for faster GNOME start on RK3568; menu became empty.
+[org/gnome/shell]
+enabled-extensions=['ubuntu-dock@ubuntu.com', 'ding@rastersoft.com', 'ubuntu-appindicators@ubuntu.com']
+disabled-extensions=@as []
+
+[org/gnome/desktop/interface]
+enable-animations=false
+
+[org/gnome/mutter]
+# Prefer lower compositor overhead during session start
+experimental-features=@as []

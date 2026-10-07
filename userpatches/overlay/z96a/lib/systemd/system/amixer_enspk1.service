@@ -1,0 +1,15 @@
+[Unit]
+Description=Z96A enable speaker path (RK817 Playback Mux=HP + Internal Speakers amp)
+After=sound.target
+Wants=sound.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/z96a-ensound
+RemainAfterExit=true
+TimeoutStartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

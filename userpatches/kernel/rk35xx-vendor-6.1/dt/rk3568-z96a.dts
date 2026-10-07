@@ -472,6 +472,35 @@
 	status = "okay";
 };
 
+/*
+ * CPU OC: needs TF-A SCMI PVTPLL 2088/2208 (userpatches atf 1010).
+ * Voltages within SYR827 max 1.39V.
+ */
+&cpu0_opp_table {
+	opp-2088000000 {
+		opp-hz = /bits/ 64 <2088000000>;
+		opp-microvolt = <1225000 1225000 1390000>;
+		clock-latency-ns = <40000>;
+	};
+	opp-2208000000 {
+		opp-hz = /bits/ 64 <2208000000>;
+		opp-microvolt = <1300000 1300000 1390000>;
+		clock-latency-ns = <40000>;
+	};
+};
+
+/* GPU OC: needs TF-A SCMI PVTPLL 900/1000 (userpatches atf 1011). */
+&gpu_opp_table {
+	opp-900000000 {
+		opp-hz = /bits/ 64 <900000000>;
+		opp-microvolt = <1050000 1050000 1150000>;
+	};
+	opp-1000000000 {
+		opp-hz = /bits/ 64 <1000000000>;
+		opp-microvolt = <1100000 1100000 1150000>;
+	};
+};
+
 &edp {
 	force-hpd;
 	status = "okay";
@@ -580,9 +609,8 @@
 			data-role = "dual";
 			pd-revision = <0x200>;
 			source-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>;
-			sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)
-				     	 PDO_VAR(5000, 5000, 1000)
-				     	 PDO_PPS_APDO(5000, 5000, 3000)>;
+			/* 5V-only sink — never advertise higher VBUS Request. */
+			sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>;
 			op-sink-microwatt = <10000000>;
 
 			ports {
@@ -866,8 +894,9 @@
 			dc_det_adc = <0>;
 			extcon = <&usb2phy0>;
 			otg_switch-supply = <&otg_switch>;
-			dc_det_gpio = <&gpio3 RK_PC0 GPIO_ACTIVE_LOW>;
-			//charger-done-gpios = <&gpio3 RK_PC4 GPIO_ACTIVE_HIGH>;
+			/* Same jack as mainline bat-adc: GPIO3_PA5, not PC0 (vcc_mipi / camera). */
+			dc_det_gpio = <&gpio3 RK_PA5 GPIO_ACTIVE_LOW>;
+			pinctrl-names = "default";
 			pinctrl-0 = <&dc_det_gpio_pin>;
 			gate_function_disable = <1>;
 		};
@@ -1129,8 +1158,9 @@
 	sd-uhs-sdr104;
 };
 
+/* Z96A boots from eMMC; SFC SPI NOR unused and fspi-pins conflicts (gpio1-23). */
 &sfc {
-	status = "okay";
+	status = "disabled";
 };
 
 &tsadc {

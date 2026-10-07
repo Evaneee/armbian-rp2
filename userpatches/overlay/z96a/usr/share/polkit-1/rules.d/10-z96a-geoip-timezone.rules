@@ -1,0 +1,7 @@
+// Allow active local users to set timezone (GNOME Location → GeoIP helper).
+polkit.addRule(function (action, subject) {
+	if (action.id == "org.freedesktop.timedate1.set-timezone" &&
+	    subject.local && subject.active) {
+		return polkit.Result.YES;
+	}
+});

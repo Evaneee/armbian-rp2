@@ -1,0 +1,7 @@
+Package: snapd
+Pin: release a=*
+Pin-Priority: -10
+
+Package: gnome-software-plugin-snap
+Pin: release a=*
+Pin-Priority: -10

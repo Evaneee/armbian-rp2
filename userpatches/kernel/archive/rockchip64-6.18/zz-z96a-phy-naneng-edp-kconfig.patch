@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Evan <evan@local>
+Date: Wed, 7 Oct 2026 12:40:00 +0800
+Subject: [PATCH] phy: rockchip: wire Naneng eDP PHY into Kbuild
+
+The zz-z96a-regen-phy-rockchip-naneng-edp.patch only adds the .c file.
+Without Kconfig/Makefile, CONFIG_PHY_ROCKCHIP_NANENG_EDP is dropped and
+rk3568-edp stays in deferred probe ("no DP phy configured").
+
+--- a/drivers/phy/rockchip/Makefile
++++ b/drivers/phy/rockchip/Makefile
+@@ -8,6 +8,7 @@
+ obj-$(CONFIG_PHY_ROCKCHIP_INNO_USB2)	+= phy-rockchip-inno-usb2.o
+ obj-$(CONFIG_PHY_ROCKCHIP_INNO_USB3)	+= phy-rockchip-inno-usb3.o
+ obj-$(CONFIG_PHY_ROCKCHIP_NANENG_COMBO_PHY)	+= phy-rockchip-naneng-combphy.o
++obj-$(CONFIG_PHY_ROCKCHIP_NANENG_EDP)	+= phy-rockchip-naneng-edp.o
+ obj-$(CONFIG_PHY_ROCKCHIP_PCIE)		+= phy-rockchip-pcie.o
+ obj-$(CONFIG_PHY_ROCKCHIP_SAMSUNG_DCPHY)	+= phy-rockchip-samsung-dcphy.o
+ obj-$(CONFIG_PHY_ROCKCHIP_SAMSUNG_HDPTX)	+= phy-rockchip-samsung-hdptx.o
+--- a/drivers/phy/rockchip/Kconfig
++++ b/drivers/phy/rockchip/Kconfig
+@@ -84,6 +84,14 @@
+ 	  Enable this to support the Rockchip PCIe/USB3.0/SATA/QSGMII
+ 	  combo PHY with NaNeng IP block.
+ 
++config PHY_ROCKCHIP_NANENG_EDP
++	tristate "Rockchip Naneng eDP Transmitter PHY driver"
++	depends on ARCH_ROCKCHIP && OF
++	select GENERIC_PHY
++	help
++	  Support for Rockchip eDP Transmitter PHY with Naneng IP block.
++
++
+ config PHY_ROCKCHIP_PCIE
+	tristate "Rockchip PCIe PHY Driver"
+	depends on (ARCH_ROCKCHIP && OF) || COMPILE_TEST

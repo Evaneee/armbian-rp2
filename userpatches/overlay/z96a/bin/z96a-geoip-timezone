@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Set system timezone from public-IP geolocation when GNOME Location Services
+# (org.gnome.system.location enabled — "Automatic Device Location") is on.
+# Updates only: once at session start, and when that switch changes. No network loops.
+set -euo pipefail
+
+TAG=z96a-geoip-timezone
+CURL=(curl -fsS --connect-timeout 5 --max-time 10)
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || true; }
+
+location_enabled() {
+	local v
+	v="$(gsettings get org.gnome.system.location enabled 2>/dev/null || echo false)"
+	[[ "$v" == "true" ]]
+}
+
+fetch_timezone() {
+	local ip tz json
+	ip="$("${CURL[@]}" https://ipinfo.io/ip 2>/dev/null || true)"
+	[[ -z "$ip" ]] && ip="$("${CURL[@]}" https://api.ipify.org 2>/dev/null || true)"
+	[[ -n "$ip" ]] || return 1
+
+	json="$("${CURL[@]}" "https://ipinfo.io/${ip}/json" 2>/dev/null || true)"
+	tz="$(printf '%s' "$json" | jq -r '.timezone // empty' 2>/dev/null || true)"
+	if [[ -z "$tz" || "$tz" == "null" ]]; then
+		tz="$("${CURL[@]}" "http://ipwhois.app/json/${ip}" 2>/dev/null \
+			| jq -r '.timezone // empty' 2>/dev/null || true)"
+	fi
+	if [[ -z "$tz" || "$tz" == "null" ]]; then
+		tz="$(printf '%s' "$json" | sed -n 's/.*"timezone"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	fi
+	[[ -n "$tz" && "$tz" != "null" ]] || return 1
+	printf '%s\n' "$tz"
+}
+
+apply_timezone() {
+	if ! location_enabled; then
+		log "location disabled — skip"
+		return 0
+	fi
+
+	local tz cur
+	# Wait briefly for network at session start (one shot, not a refresh loop).
+	local attempt
+	for attempt in 1 2 3 4 5 6; do
+		tz="$(fetch_timezone)" && break
+		[[ "$attempt" -lt 6 ]] || {
+			log "GeoIP lookup failed"
+			return 1
+		}
+		sleep 5
+	done
+	cur="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+	if [[ "$cur" == "$tz" ]]; then
+		log "already ${tz}"
+		return 0
+	fi
+	if busctl call org.freedesktop.timedate1 /org/freedesktop/timedate1 \
+		org.freedesktop.timedate1 SetTimezone sb "$tz" false >/dev/null 2>&1; then
+		log "timezone ${cur:-?} → ${tz} (busctl)"
+		return 0
+	fi
+	if timedatectl set-timezone "$tz" 2>/dev/null; then
+		log "timezone ${cur:-?} → ${tz} (timedatectl)"
+		return 0
+	fi
+	log "failed to set timezone ${tz} (need polkit / privileges)"
+	return 1
+}
+
+monitor() {
+	# Boot / session start: one update, then idle until Location Services toggles.
+	apply_timezone || true
+	gsettings monitor org.gnome.system.location enabled 2>/dev/null | while read -r _; do
+		apply_timezone || true
+	done
+}
+
+case "${1:-}" in
+	--monitor) monitor ;;
+	"" | --once) apply_timezone ;;
+	*)
+		echo "usage: $0 [--once|--monitor]" >&2
+		exit 2
+		;;
+esac

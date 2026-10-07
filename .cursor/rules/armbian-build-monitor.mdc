@@ -1,0 +1,50 @@
+---
+description: Stream Armbian compile console to the user; wait via log markers
+alwaysApply: true
+---
+
+# Armbian build monitoring (Z96A / armbian-rp2)
+
+Builds run in `/home/evanee/mygit/armbian-rp2` (usually Docker). The user wants to **see the compile console** live. Do not hide output behind silent `nohup` + blind `pgrep`/`sleep` loops (those get aborted and waste time).
+
+## Preferred: one command that streams + waits
+
+Needs `required_permissions: ["all"]`. Never `ARTIFACT_IGNORE_CACHE` unless the user asks.
+
+```bash
+LOG=/tmp/z96a-<name>-$(date +%Y%m%d-%H%M%S).log
+cd /home/evanee/mygit/armbian-rp2
+/home/evanee/mygit/armbian-rp2/userpatches/scripts/wait-armbian-build.sh --run "$LOG" -- \
+  ./compile.sh kernel BOARD=z96a-rk3568-laptop BRANCH=current \
+  KERNEL_CONFIGURE=no CPUTHREADS=20 PREFER_DOCKER=yes
+```
+
+This **tees the full console** to the terminal and `$LOG`, then exits on success/fail.
+
+## If compile already running in background
+
+```bash
+/home/evanee/mygit/armbian-rp2/userpatches/scripts/wait-armbian-build.sh /tmp/z96a-<name>.logpath
+```
+
+The script prints **all new log bytes** (full console), not a 2-line summary.
+
+## Success / failure markers
+
+- Success: `Docker run finished after … successful` / `Kernel build finished` / `Done building image`
+- Failure: `Error 1 occurred` / `Docker run failed` / `failed with exit code`
+- `Cleaning up` after a success line = finished — stop waiting and list debs
+
+## After success
+
+```bash
+ls -lt /home/evanee/mygit/armbian-rp2/output/debs/linux-{image,dtb}-current-rockchip64_*.deb | head -4
+```
+
+Give the user exact `scp`/`dpkg` paths for the new `Pxxxx` hash. Do not keep polling.
+
+## Forbidden wait patterns
+
+- Long `for i; do sleep 30; pgrep compile.sh; tail -2 log; done` in the agent
+- Waiting only on “Cleaning up”
+- `nohup … >/tmp/log &` without streaming that log back to the user

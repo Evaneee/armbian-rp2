@@ -21,42 +21,39 @@ for _ in $(seq 1 20); do
 	sleep 1
 done
 
+# Only touch a real bluetooth rfkill. Never fall back to rfkill0 — on mainline
+# current that index is phy0 (Wi‑Fi); toggling it hard-kills wlan every attach.
 rfkill_bt_reset() {
-	local rfkill_dev="" t n
-	for t in /sys/class/rfkill/rfkill*/name; do
+	local rfkill_dev="" t n typ
+	for t in /sys/class/rfkill/rfkill*/type; do
 		[[ -f "$t" ]] || continue
-		n="$(cat "$t" 2>/dev/null || true)"
+		typ="$(cat "$t" 2>/dev/null || true)"
+		[[ "$typ" = "bluetooth" ]] || continue
+		rfkill_dev="${t%/type}"
+		n="$(cat "${rfkill_dev}/name" 2>/dev/null || true)"
+		# Skip WLAN / combined names that are not BT-only.
 		case "$n" in
-			*bt*|*BT*|*Bluetooth*|bt_default) rfkill_dev="${t%/name}"; break ;;
+			phy*|wlan*|wifi*) continue ;;
 		esac
+		break
 	done
-	if [[ -z "$rfkill_dev" ]]; then
-		for t in /sys/class/rfkill/rfkill*/type; do
-			[[ -f "$t" ]] || continue
-			[[ "$(cat "$t" 2>/dev/null)" = "bluetooth" ]] || continue
-			rfkill_dev="${t%/type}"
-			break
-		done
-	fi
-	if [[ -n "$rfkill_dev" && -f "${rfkill_dev}/state" ]]; then
-		log "reset rfkill ${rfkill_dev##*/} ($(cat "${rfkill_dev}/name" 2>/dev/null))"
-		echo 0 >"${rfkill_dev}/state"
-		sleep 2
-		echo 1 >"${rfkill_dev}/state"
-		sleep 2
+	if [[ -z "$rfkill_dev" || ! -f "${rfkill_dev}/state" ]]; then
+		log "no bluetooth rfkill node; skip reset (do not touch Wi-Fi rfkill)"
 		return 0
 	fi
-	if [[ -f /sys/class/rfkill/rfkill0/state ]]; then
-		log "reset rfkill0 (legacy fallback)"
-		echo 0 >/sys/class/rfkill/rfkill0/state
-		sleep 2
-		echo 1 >/sys/class/rfkill/rfkill0/state
-		sleep 2
-	fi
+	log "reset rfkill ${rfkill_dev##*/} ($n)"
+	echo 0 >"${rfkill_dev}/state"
+	sleep 2
+	echo 1 >"${rfkill_dev}/state"
+	sleep 2
 }
 
 rfkill_bt_reset
-command -v rfkill >/dev/null 2>&1 && rfkill unblock bluetooth 2>/dev/null || true
+command -v rfkill >/dev/null 2>&1 && {
+	rfkill unblock bluetooth 2>/dev/null || true
+	rfkill unblock wifi 2>/dev/null || true
+	rfkill unblock wlan 2>/dev/null || true
+}
 
 for _ in $(seq 1 30); do
 	[[ -c "$BT_TTY_DEV" ]] && break

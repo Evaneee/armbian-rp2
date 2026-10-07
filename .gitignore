@@ -36,3 +36,9 @@ Dockerfile
 
 # Runtime symlink created by extensions/seeed-rk.sh (points into cache/sources)
 extensions/seeed_armbian_extension
+
+# Z96A: local Android eMMC dumps (multi-GB) — root or userpatches/
+/mmcblk2_5g.img
+/mmcblk*.img
+/userpatches/mmcblk2_5g.img
+/userpatches/mmcblk*.img

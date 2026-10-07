@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Evolution Alarm Notify
+Comment=Disabled on Z96A — Evolution calendar stack slows GNOME Shell start
+Exec=/usr/libexec/evolution-data-server/evolution-alarm-notify
+Terminal=false
+Type=Application
+NoDisplay=true
+Hidden=true
+X-GNOME-Autostart-enabled=false
+OnlyShowIn=GNOME;Unity;XFCE;GNOME-Classic;GNOME-Flashback;X-Cinnamon;

@@ -1,0 +1,14 @@
+[Unit]
+Description=Z96A RTL8821CS firmware .bin symlinks
+DefaultDependencies=no
+Before=bluetooth.service z96a-bt-ready.service sysinit.target
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/z96a-bt-fw-link
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

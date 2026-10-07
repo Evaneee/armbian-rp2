@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Forward rk805 KEY_POWER to a virtual device only if held long enough.
+
+DC-jack plug on Z96A briefly pulses RK817 PWRON → logind "Power key pressed
+short" → GNOME ~60s endSessionDialog. Real button presses are longer.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import select
+import struct
+import sys
+import time
+
+EV_SYN, EV_KEY = 0, 1
+SYN_REPORT, KEY_POWER = 0, 116
+EVENT_FMT = "llHHI"
+EVENT_SIZE = struct.calcsize(EVENT_FMT)
+
+# Default: ignore presses shorter than this (AC plug glitch << 50ms; require deliberate hold).
+DEFAULT_MIN_MS = 2000
+
+
+def find_rk805_event() -> str | None:
+    for name in os.listdir("/sys/class/input"):
+        if not name.startswith("event"):
+            continue
+        try:
+            with open(f"/sys/class/input/{name}/device/name", encoding="utf-8") as f:
+                if f.read().strip() == "rk805 pwrkey":
+                    return f"/dev/input/{name}"
+        except OSError:
+            continue
+    return None
+
+
+def open_uinput():
+    import fcntl
+    import array
+
+    UI_SET_EVBIT = 0x40045564
+    UI_SET_KEYBIT = 0x40045565
+    UI_DEV_SETUP = 0x405c5503
+    UI_DEV_CREATE = 0x5501
+    UI_DEV_DESTROY = 0x5502
+
+    # struct uinput_setup on 64-bit: input_id(8) + name[80] + ff_effects_max(4) + pad
+    # Keep it simple: use /dev/uinput write protocol via libevdev if present is heavier.
+    # Minimal uinput_user_dev legacy interface:
+    UINPUT_MAX_NAME_SIZE = 80
+    BUS_VIRTUAL = 0x06
+
+    fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+    fcntl.ioctl(fd, UI_SET_EVBIT, EV_KEY)
+    fcntl.ioctl(fd, UI_SET_EVBIT, EV_SYN)
+    fcntl.ioctl(fd, UI_SET_KEYBIT, KEY_POWER)
+
+    # legacy uinput_user_dev
+    name = b"z96a-pwrkey-filtered"
+    name = name[: UINPUT_MAX_NAME_SIZE - 1].ljust(UINPUT_MAX_NAME_SIZE, b"\0")
+    # struct input_id: bustype, vendor, product, version (4x u16)
+    # absmin/absmax/absfuzz/absflat: 64 * 4 ints = 256 ints... too big.
+    # Prefer UI_DEV_SETUP (modern):
+    # struct uinput_setup { input_id id; char name[80]; unsigned int ff_effects_max; }
+    id_bustype = BUS_VIRTUAL
+    id_vendor = 0x0000
+    id_product = 0x0000
+    id_version = 1
+    setup = struct.pack(
+        "HHHH80sI",
+        id_bustype,
+        id_vendor,
+        id_product,
+        id_version,
+        name,
+        0,
+    )
+    # Align: on aarch64/x86_64 HHHH80sI may need padding after name before I.
+    # Use explicit packing with pad:
+    setup = struct.pack(
+        "HHHH80sI4x",
+        id_bustype,
+        id_vendor,
+        id_product,
+        id_version,
+        name,
+        0,
+    )
+    try:
+        fcntl.ioctl(fd, UI_DEV_SETUP, setup)
+    except OSError:
+        # Fallback without trailing pad
+        setup = struct.pack(
+            "HHHH80sI",
+            id_bustype,
+            id_vendor,
+            id_product,
+            id_version,
+            name,
+            0,
+        )
+        fcntl.ioctl(fd, UI_DEV_SETUP, setup)
+    fcntl.ioctl(fd, UI_DEV_CREATE)
+    time.sleep(0.1)
+    return fd, UI_DEV_DESTROY
+
+
+def emit(fd, etype, code, value):
+    now = time.time()
+    sec = int(now)
+    usec = int((now - sec) * 1_000_000)
+    os.write(fd, struct.pack(EVENT_FMT, sec, usec, etype, code, value))
+
+
+def emit_key(fd, code, value):
+    emit(fd, EV_KEY, code, value)
+    emit(fd, EV_SYN, SYN_REPORT, 0)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--min-ms", type=int, default=DEFAULT_MIN_MS)
+    ap.add_argument("--device", default=None)
+    args = ap.parse_args()
+
+    path = args.device or find_rk805_event()
+    if not path:
+        print("rk805 pwrkey event node not found", file=sys.stderr)
+        return 1
+
+    # Grab source so logind/GNOME do not see raw glitches.
+    import fcntl
+
+    EVIOCGRAB = 0x40044590
+    src = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    fcntl.ioctl(src, EVIOCGRAB, 1)
+
+    ufd, UI_DEV_DESTROY = open_uinput()
+    print(f"filtering {path} -> uinput (min_ms={args.min_ms})", flush=True)
+
+    down_t = None
+    forwarded_down = False
+    try:
+        while True:
+            r, _, _ = select.select([src], [], [], 1.0)
+            if not r:
+                continue
+            while True:
+                try:
+                    data = os.read(src, EVENT_SIZE)
+                except BlockingIOError:
+                    break
+                if len(data) < EVENT_SIZE:
+                    break
+                _sec, _usec, etype, code, value = struct.unpack(EVENT_FMT, data)
+                if etype != EV_KEY or code != KEY_POWER or value == 2:
+                    continue
+                now = time.time()
+                if value == 1:
+                    down_t = now
+                    forwarded_down = False
+                elif value == 0 and down_t is not None:
+                    dur_ms = (now - down_t) * 1000.0
+                    if dur_ms >= args.min_ms:
+                        # Synthesize a clean short press for GNOME interactive dialog.
+                        emit_key(ufd, KEY_POWER, 1)
+                        emit_key(ufd, KEY_POWER, 0)
+                        print(f"forward press {dur_ms:.0f}ms", flush=True)
+                    else:
+                        print(f"drop glitch {dur_ms:.0f}ms", flush=True)
+                    down_t = None
+                    forwarded_down = False
+    finally:
+        try:
+            fcntl.ioctl(ufd, UI_DEV_DESTROY)
+        except Exception:
+            pass
+        os.close(ufd)
+        try:
+            fcntl.ioctl(src, EVIOCGRAB, 0)
+        except Exception:
+            pass
+        os.close(src)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

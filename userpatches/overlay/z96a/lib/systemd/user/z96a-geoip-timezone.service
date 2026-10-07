@@ -1,0 +1,14 @@
+[Unit]
+Description=Z96A GeoIP timezone when GNOME Location Services is on
+Documentation=file:///usr/local/bin/z96a-geoip-timezone
+After=graphical-session.target
+# One shot at login + watch Location switch only; do not refresh on network/VPN changes.
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/z96a-geoip-timezone --monitor
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target

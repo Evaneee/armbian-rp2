@@ -64,7 +64,22 @@ if test -z "${rootdev}"; then
 	fi
 fi
 
-setenv bootargs "root=${rootdev} rootwait rootfstype=${rootfstype} ${consoleargs} consoleblank=0 loglevel=${verbosity} ubootpart=${partuuid} usb-storage.quirks=${usbstoragequirks} ${extraargs} ${extraboardargs}"
+# USB3 + cheap Alcor sticks (058f:6387): after U-Boot loads the kernel from
+# xHCI, the kernel re-inits the controller and the stick often never comes back
+# as a block device (USB2/EHCI works). Disable UAS *and* USB LPM.
+# If armbianEnv already set usbstoragequirks (other VID:PIDs), still append Alcor.
+if test -z "${usbstoragequirks}"; then
+	setenv usbstoragequirks "0x058f:0x6387:u"
+else
+	setenv usbstoragequirks "${usbstoragequirks},0x058f:0x6387:u"
+fi
+# rootwait is enough on eMMC; default 30s rootdelay only slows initramfs.
+if test -z "${rootdelay}"; then setenv rootdelay "0"; fi
+setenv extraargs "${extraargs} usbcore.quirks=058f:6387:k usbcore.autosuspend=-1"
+
+# eDP console (validated on edge hybrid): fbcon on fb0 + fixed panel mode
+setenv z96a_displayargs "fbcon=map:0 video=eDP-1:1920x1080@60"
+setenv bootargs "root=${rootdev} rootwait rootdelay=${rootdelay} rootfstype=${rootfstype} ${consoleargs} consoleblank=0 loglevel=${verbosity} ubootpart=${partuuid} usb-storage.quirks=${usbstoragequirks} ${extraargs} ${extraboardargs} ${z96a_displayargs}"
 
 if test "${docker_optimizations}" = "on"; then setenv bootargs "${bootargs} cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory"; fi
 

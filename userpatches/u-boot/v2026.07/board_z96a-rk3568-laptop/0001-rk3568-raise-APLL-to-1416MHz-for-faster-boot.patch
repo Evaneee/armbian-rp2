@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Z96A <z96a@local>
+Date: Mon, 5 Oct 2026 20:00:00 +0800
+Subject: [PATCH] rk3568: raise APLL_HZ to 1416 MHz for faster boot
+
+Mainline leaves APLL_HZ at 816 MHz for the whole U-Boot proper stage.
+Loading ~65 MiB Image+initrd from eMMC is noticeably slow. Vendor
+firmware uses 1416 MHz as the SCMI clk-init rate; match that here so
+U-Boot stays at the same early frequency ATF will set.
+
+Signed-off-by: Z96A <z96a@local>
+---
+ arch/arm/include/asm/arch-rockchip/cru_rk3568.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/include/asm/arch-rockchip/cru_rk3568.h b/arch/arm/include/asm/arch-rockchip/cru_rk3568.h
+index 111111111111..222222222222 100644
+--- a/arch/arm/include/asm/arch-rockchip/cru_rk3568.h
++++ b/arch/arm/include/asm/arch-rockchip/cru_rk3568.h
+@@ -11,7 +11,7 @@
+ #define KHz		1000
+ #define OSC_HZ		(24 * MHz)
+ 
+-#define APLL_HZ		(816 * MHz)
++#define APLL_HZ		(1416 * MHz)
+ #define GPLL_HZ		(1188 * MHz)
+ #define CPLL_HZ		(1000 * MHz)
+ #define PPLL_HZ		(200 * MHz)
+-- 
+Armbian

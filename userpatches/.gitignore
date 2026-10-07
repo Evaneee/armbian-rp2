@@ -1,0 +1,22 @@
+# Large Android/eMMC dumps — never commit
+mmcblk2_5g.img
+mmcblk*.img
+
+# Local Maskrom rescue blobs only — never used by compile.sh; do not commit
+overlay/z96a/uboot-prebuilt/*.bin
+overlay/z96a/uboot-prebuilt/*.img
+overlay/z96a/uboot-prebuilt/*.itb
+overlay/z96a/uboot-prebuilt/boot.scr
+
+# Kernel/out-of-tree build leftovers — never commit
+kernel/archive/*/mpp-src/built-in.a
+kernel/archive/*/mpp-src/*.o
+kernel/archive/*/mpp-src/.*.cmd
+tools/z96a-edp/*.ko
+tools/z96a-edp/*.o
+tools/z96a-edp/*.mod
+tools/z96a-edp/*.mod.c
+tools/z96a-edp/Module.symvers
+tools/z96a-edp/modules.order
+tools/z96a-edp/.*.cmd
+tools/z96a-edp/.*.o

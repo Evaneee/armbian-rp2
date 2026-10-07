@@ -1,0 +1,11 @@
+[Unit]
+Description=Z96A RK817 speaker route (HP mux + Internal Speakers amp)
+After=sound.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c "amixer -c 0 sset 'Internal Speakers' on; amixer -c 0 sset 'Playback Mux' HP; amixer -c 0 sset Master 90% unmute"
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,44 @@
+menuconfig DRM_ROCKCHIP
+	bool "Rockchip DRM Support (Z96A eDP subset from Radxa next-dev)"
+	depends on VIDEO && OF_CONTROL
+	select VIDEO_BRIDGE
+	select PHY
+	help
+	  Minimal Rockchip DRM: VOP2 + Analogix eDP + combo PHY + simple panel.
+	  Sourced from Radxa U-Boot next-dev-v2024.10 for RK3568 laptop eDP.
+	  Mainline v2026.07 uses CONFIG_VIDEO (not CONFIG_DM_VIDEO).
+
+if DRM_ROCKCHIP
+
+config DRM_MEM_RESERVED_SIZE_MBYTES
+	int "DRM memory pool size in MiB"
+	default 16
+
+config DRM_ROCKCHIP_VIDEO_FRAMEBUFFER
+	bool "1920x1080 DRM framebuffer"
+	default y
+	help
+	  Reserve a 1920x1080x32bpp framebuffer for Rockchip DRM vidconsole.
+
+config ROCKCHIP_CUBIC_LUT_SIZE
+	int "Cubic LUT size (0 = disabled)"
+	default 0
+
+config DRM_DP_HELPER
+	bool
+	default y
+
+config DRM_ROCKCHIP_PANEL
+	bool "Rockchip Panel Support"
+	default y
+
+config DRM_ROCKCHIP_ANALOGIX_DP
+	bool "Rockchip Analogix DP / eDP"
+	default y
+	select DRM_DP_HELPER
+
+config DRM_ROCKCHIP_INNO_VIDEO_COMBO_PHY
+	bool "Rockchip Inno Video Combo PHY"
+	default y
+
+endif

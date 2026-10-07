@@ -1,0 +1,13 @@
+[Unit]
+Description=Z96A rk805 power-key debounce (drop DC-jack KEY_POWER glitches)
+After=multi-user.target
+Before=gdm.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/z96a-pwrkey-filter --min-ms 2000
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

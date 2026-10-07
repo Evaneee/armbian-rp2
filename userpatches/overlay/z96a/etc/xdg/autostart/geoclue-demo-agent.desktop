@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Geoclue Demo agent
+Comment=Disabled on Z96A — GeoClue MLS fails and slows GNOME login
+Exec=/usr/libexec/geoclue-2.0/demos/agent
+Icon=find-location-symbolic
+Terminal=false
+Type=Application
+NoDisplay=true
+Hidden=true
+X-GNOME-Autostart-enabled=false

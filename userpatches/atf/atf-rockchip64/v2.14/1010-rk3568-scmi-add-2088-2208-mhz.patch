@@ -1,0 +1,23 @@
+Subject: [PATCH] rk3568: SCMI add 2088/2208 MHz CPU OC rates
+
+--- a/plat/rockchip/rk3568/drivers/scmi/rk3568_clk.c
++++ b/plat/rockchip/rk3568/drivers/scmi/rk3568_clk.c
+@@ -156,6 +156,9 @@
+ }
+ 
+ static struct pvtpll_table rk3568_cpu_pvtpll_table[] = {
++	/* OC: vendor clk-rk3568 APLL 24*87 / 24*92 — may be unstable */
++	ROCKCHIP_CPU_PVTPLL(2208000000, 1, 92, 1, 1, 1, 0, 0x33),
++	ROCKCHIP_CPU_PVTPLL(2088000000, 1, 87, 1, 1, 1, 0, 0x33),
+ 	ROCKCHIP_CPU_PVTPLL(1992000000, 1, 83, 1, 1, 1, 0, 0x33),
+ 	ROCKCHIP_CPU_PVTPLL(1800000000, 1, 75, 1, 1, 1, 0, 0x33),
+ 	ROCKCHIP_CPU_PVTPLL(1608000000, 1, 67, 1, 1, 1, 0, 0x3b),
+@@ -198,7 +201,7 @@
+ static unsigned long rk3568_cpu_rates[] = {
+ 	216000000, 312000000, 408000000, 816000000,
+ 	1008000000, 1200000000, 1416000000, 1608000000,
+-	1800000000, 1992000000
++	1800000000, 1992000000, 2088000000, 2208000000
+ };
+ 
+ static unsigned long rk3568_gpu_rates[] = {

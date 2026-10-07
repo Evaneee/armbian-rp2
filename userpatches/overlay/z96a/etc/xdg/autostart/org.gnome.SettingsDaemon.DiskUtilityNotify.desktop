@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GNOME Settings Daemon - Disk Utility Notify
+Exec=/usr/libexec/gsd-disk-utility-notify
+OnlyShowIn=GNOME;
+NoDisplay=true
+Hidden=true
+X-GNOME-Autostart-enabled=false
+X-Ubuntu-Gettext-Domain=gnome-settings-daemon

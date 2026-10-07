@@ -1,0 +1,17 @@
+Subject: [PATCH] rk3568: raise CPU to 1416 MHz during SCMI clock init
+
+--- a/plat/rockchip/rk3568/drivers/scmi/rk3568_clk.c	2026-10-05 19:59:30.346020531 +0800
++++ b/plat/rockchip/rk3568/drivers/scmi/rk3568_clk.c	2026-10-05 19:59:30.359020783 +0800
+@@ -756,4 +756,12 @@
+ 					   npu_opp_info.max_freq,
+ 					   npu_opp_info.length);
+ 	}
++
++	/*
++	 * Vendor clk-init default. Raise early so U-Boot / pre-cpufreq kernel
++	 * are not stuck on a low bootrom/DDR residual rate.
++	 */
++	sys_clk_info.cpu_rate = 1416000000UL;
++	clk_cpu_set_rate(sys_clk_info.cpu_rate, PLL_SEL_AUTO);
++	INFO("early cpu rate set to %lu Hz\n", sys_clk_info.cpu_rate);
+ }

@@ -1,0 +1,8 @@
+# Prefer Rockchip-multimedia PPA Chromium / libv4l (+rkmpp) over Armbian desktop Chromium.
+Package: chromium chromium-common chromium-sandbox chromium-l10n
+Pin: version *rkmpp*
+Pin-Priority: 1002
+
+Package: libv4l-0t64 libv4lconvert0t64 libv4l2rds0t64 v4l-utils
+Pin: version *rkmpp*
+Pin-Priority: 1002

@@ -1124,8 +1124,9 @@
 	sd-uhs-sdr104;
 };
 
+/* Z96A boots from eMMC; SFC SPI NOR unused and fspi-pins conflicts (gpio1-23). */
 &sfc {
-	status = "okay";
+	status = "disabled";
 };
 
 &tsadc {

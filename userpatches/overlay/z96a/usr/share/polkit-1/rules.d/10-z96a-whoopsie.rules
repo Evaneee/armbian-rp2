@@ -1,0 +1,9 @@
+// Armbian has no unix-group:admin; GNOME Settings polls Whoopsie every ~60s and
+// auth_admin pops Authentication Required. Allow active sudo/admin users silently.
+polkit.addRule(function (action, subject) {
+	if (action.id == "com.ubuntu.whoopsiepreferences.change" &&
+	    subject.local && subject.active &&
+	    (subject.isInGroup("sudo") || subject.isInGroup("admin"))) {
+		return polkit.Result.YES;
+	}
+});

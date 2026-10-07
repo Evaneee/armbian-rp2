@@ -1,0 +1,12 @@
+[Unit]
+Description=Create libv4l-rkmpp dummy V4L nodes for Chromium
+After=local-fs.target systemd-modules-load.service
+Before=graphical.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/create-chromium-vda-vea-devices.sh
+
+[Install]
+WantedBy=multi-user.target

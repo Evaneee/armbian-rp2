@@ -1,0 +1,133 @@
+#!/bin/bash
+# jpegd_test — exercise RK3568 JPEG HW decoder (fded0000.jpegd) via MPP.
+#
+# Uses rockchip mpi_dec_test (proven to raise jpegd IRQs). FFmpeg has no
+# mjpeg_rkmpp *decoder* on this image.
+#
+# Usage:
+#   ./jpegd_test [-n loops] [-o out.yuv] file.jpg [file.jpg ...]
+set -euo pipefail
+
+LOOPS=1
+OUT=""
+FILES=()
+
+usage() {
+	echo "Usage: $0 [-n loops] [-o out.yuv] jpeg [jpeg ...]" >&2
+	exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	-n) LOOPS=${2:?}; shift 2 ;;
+	-o) OUT=${2:?}; shift 2 ;;
+	-h|--help) usage ;;
+	--) shift; FILES+=("$@"); break ;;
+	-*) usage ;;
+	*) FILES+=("$1"); shift ;;
+	esac
+done
+[[ ${#FILES[@]} -gt 0 && $LOOPS -ge 1 ]] || usage
+
+command -v mpi_dec_test >/dev/null || {
+	echo "need rockchip-mpp-demos (apt install rockchip-mpp-demos)" >&2
+	exit 1
+}
+
+jpeg_wh() {
+	python3 - "$1" <<'PY'
+import sys
+b=open(sys.argv[1],'rb').read()
+if b[:2]!=b'\xff\xd8':
+    sys.exit(1)
+i=2
+while i+9<len(b):
+    if b[i]!=0xff:
+        i+=1; continue
+    while i<len(b) and b[i]==0xff: i+=1
+    if i>=len(b): break
+    m=b[i]; i+=1
+    if m in (0xd9,0xda): break
+    if i+1>=len(b): break
+    seglen=(b[i]<<8)|b[i+1]
+    if seglen<2 or i+seglen>len(b): sys.exit(1)
+    if 0xc0<=m<=0xc2 and seglen>=7:
+        h=(b[i+3]<<8)|b[i+4]; w=(b[i+5]<<8)|b[i+6]
+        print(w,h); sys.exit(0)
+    i+=seglen
+sys.exit(1)
+PY
+}
+
+jpegd_irq() {
+	awk '/jpegd/ {
+		s=0
+		for (i=2; i<=NF; i++) {
+			if ($i ~ /^[0-9]+$/) s+=$i
+			else break
+		}
+		print s
+		exit
+	}' /proc/interrupts
+}
+
+IRQ0=$(jpegd_irq || echo -1)
+echo "jpegd_test: loops=$LOOPS files=${#FILES[@]}"
+echo "jpegd IRQ before: $IRQ0"
+
+OK=0
+FAIL=0
+START=$(date +%s.%N)
+OUT_DONE=0
+
+for ((L=1; L<=LOOPS; L++)); do
+	for f in "${FILES[@]}"; do
+		if [[ ! -f $f ]]; then
+			echo "missing $f" >&2
+			FAIL=$((FAIL+1))
+			continue
+		fi
+		if ! WH=$(jpeg_wh "$f"); then
+			echo "not JPEG / no SOF: $f" >&2
+			FAIL=$((FAIL+1))
+			continue
+		fi
+		set -- $WH
+		W=$1 H=$2
+		echo "[$L/$LOOPS] $f (${W}x${H})"
+		ARGS=(-t jpeg -i "$f" -w "$W" -h "$H" -n 1)
+		if [[ -n $OUT && $OUT_DONE -eq 0 ]]; then
+			ARGS+=(-o "$OUT")
+		fi
+		if mpi_dec_test "${ARGS[@]}" >/tmp/jpegd_test_mpi.log 2>&1; then
+			OK=$((OK+1))
+			if [[ -n $OUT && $OUT_DONE -eq 0 && -s $OUT ]]; then
+				echo "  wrote $OUT ($(wc -c <"$OUT") bytes)"
+				OUT_DONE=1
+			fi
+		else
+			echo "  mpi_dec_test failed (ec=$?)" >&2
+			tail -5 /tmp/jpegd_test_mpi.log >&2 || true
+			FAIL=$((FAIL+1))
+		fi
+	done
+done
+
+END=$(date +%s.%N)
+IRQ1=$(jpegd_irq || echo -1)
+ELAPSED=$(python3 -c "print(round(float('$END')-float('$START'),3))")
+DELTA=-1
+[[ $IRQ0 -ge 0 && $IRQ1 -ge 0 ]] && DELTA=$((IRQ1-IRQ0))
+
+echo "jpegd IRQ after:  $IRQ1  (delta=$DELTA)"
+echo -n "decoded_ok=$OK fail=$FAIL elapsed=${ELAPSED}s"
+if [[ $OK -gt 0 ]]; then
+	python3 -c "print('  (~%.1f fps)' % ($OK/float('$ELAPSED')))" 2>/dev/null || echo
+else
+	echo
+fi
+
+if [[ $OK -gt 0 && $DELTA -ge 0 && $DELTA -eq 0 ]]; then
+	echo "WARNING: IRQ did not rise — may not have hit jpegd HW" >&2
+fi
+[[ $FAIL -eq 0 ]]

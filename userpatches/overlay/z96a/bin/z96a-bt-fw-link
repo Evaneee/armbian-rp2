@@ -1,0 +1,5 @@
+#!/bin/sh
+cd /lib/firmware/rtl_bt || exit 0
+[ -f rtl8821cs_fw ] && [ ! -e rtl8821cs_fw.bin ] && ln -sf rtl8821cs_fw rtl8821cs_fw.bin
+[ -f rtl8821cs_config ] && [ ! -e rtl8821cs_config.bin ] && ln -sf rtl8821cs_config rtl8821cs_config.bin
+exit 0

@@ -1,0 +1,15 @@
+[Unit]
+Description=Z96A thermal frequency guard (HOT 86.5C / HARD 88C)
+After=multi-user.target cpufrequtils.service
+Wants=cpufrequtils.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/z96a-thermal-guard
+ExecStart=/usr/local/bin/z96a-thermal-guard
+Restart=always
+RestartSec=1
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

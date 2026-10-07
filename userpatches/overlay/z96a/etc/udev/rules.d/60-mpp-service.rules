@@ -1,0 +1,2 @@
+# Rockchip MPP char device — video group (matches packages/bsp/rockchip/60-media.rules)
+KERNEL=="mpp_service", MODE="0660", GROUP="video"

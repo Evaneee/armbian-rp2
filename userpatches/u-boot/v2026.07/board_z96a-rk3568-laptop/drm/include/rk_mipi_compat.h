@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
+#ifndef RK_MIPI_COMPAT_H
+#define RK_MIPI_COMPAT_H
+#ifndef MIPI_DSI_COMPRESSION_MODE
+#define MIPI_DSI_COMPRESSION_MODE 0x07
+#endif
+#ifndef MIPI_DSI_PICTURE_PARAMETER_SET
+#define MIPI_DSI_PICTURE_PARAMETER_SET 0x0a
+#endif
+#endif

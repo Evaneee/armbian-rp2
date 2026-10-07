@@ -1,0 +1,25 @@
+# Z96A thermal frequency guard (millidegrees C)
+# Trip: start limiting as soon as CPU or GPU hits HOT_C
+HOT_MC=86500
+# Harder cap above this (was 90C — board hard-rebooted near 90)
+HARD_MC=88000
+# Restore full OC only when both zones below this (hysteresis)
+COOL_MC=82000
+# Poll interval: fast when warm, slow when cool
+POLL_HOT_MS=500
+POLL_COOL_MS=2000
+# Switch to fast polling when either zone exceeds this
+WARM_MC=82000
+
+# Freq caps match sysfs units: CPU = kHz, GPU = Hz
+# Full unlock (with OC OPPs present)
+CPU_MAX_COOL=2208000
+GPU_MAX_COOL=1000000000
+
+# Immediate limit at HOT_MC
+CPU_MAX_HOT=1416000
+GPU_MAX_HOT=400000000
+
+# Harder limit at HARD_MC
+CPU_MAX_HARD=816000
+GPU_MAX_HARD=200000000

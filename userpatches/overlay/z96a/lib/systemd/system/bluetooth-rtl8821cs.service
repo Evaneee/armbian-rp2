@@ -1,0 +1,16 @@
+[Unit]
+Description=RTL8821CS Bluetooth fallback (rtk_hciattach on UART1)
+After=local-fs.target sysinit.target dev-ttyS1.device
+Wants=dev-ttyS1.device
+# Manual / fallback only — conflicts with DT serdev claiming ttyS1.
+
+[Service]
+Type=simple
+Environment=BT_TTY_DEV=/dev/ttyS1
+ExecStart=/usr/local/bin/bt_load_rtk_firmware
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

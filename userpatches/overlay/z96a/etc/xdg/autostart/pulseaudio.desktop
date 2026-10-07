@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=PulseAudio Sound System
+Comment=Disabled on Z96A — PipeWire is used; broken TryExec slows gnome-session
+Exec=true
+Terminal=false
+Type=Application
+Hidden=true
+X-GNOME-Autostart-enabled=false
+X-GNOME-Autostart-Phase=Initialization

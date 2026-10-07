@@ -1,0 +1,130 @@
+#!/bin/bash
+# System thermal guard: when CPU or GPU >= HOT, immediately cap freqs.
+# Config freqs match sysfs: CPU = kHz, GPU = Hz.
+set -euo pipefail
+
+CONF=/etc/default/z96a-thermal-guard
+# shellcheck source=/dev/null
+[ -f "$CONF" ] && . "$CONF"
+
+HOT_MC=${HOT_MC:-86500}
+HARD_MC=${HARD_MC:-88000}
+COOL_MC=${COOL_MC:-82000}
+WARM_MC=${WARM_MC:-82000}
+POLL_HOT_MS=${POLL_HOT_MS:-500}
+POLL_COOL_MS=${POLL_COOL_MS:-2000}
+# legacy alias
+POLL_MS=${POLL_MS:-$POLL_HOT_MS}
+CPU_MAX_COOL=${CPU_MAX_COOL:-2208000}
+GPU_MAX_COOL=${GPU_MAX_COOL:-1000000000}
+CPU_MAX_HOT=${CPU_MAX_HOT:-1416000}
+GPU_MAX_HOT=${GPU_MAX_HOT:-400000000}
+CPU_MAX_HARD=${CPU_MAX_HARD:-816000}
+GPU_MAX_HARD=${GPU_MAX_HARD:-200000000}
+
+CPU_MAX_PATH=/sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq
+GPU_MAX_PATH=/sys/class/devfreq/fde60000.gpu/max_freq
+CPU_ZONE=/sys/class/thermal/thermal_zone0/temp
+GPU_ZONE=/sys/class/thermal/thermal_zone1/temp
+
+state=cool
+log() { logger -t z96a-thermal-guard "$*"; }
+
+read_temp() {
+	local p=$1 v=0
+	[ -r "$p" ] && v=$(cat "$p" 2>/dev/null) || v=0
+	# non-numeric -> 0
+	case $v in
+		''|*[!0-9]*) v=0 ;;
+	esac
+	echo "$v"
+}
+
+set_cpu_max() {
+	local want=$1 cur
+	[ -w "$CPU_MAX_PATH" ] || return 0
+	cur=$(cat "$CPU_MAX_PATH" 2>/dev/null || echo 0)
+	[ "$cur" = "$want" ] && return 0
+	echo "$want" > "$CPU_MAX_PATH" 2>/dev/null || true
+}
+
+set_gpu_max() {
+	local want=$1 cur
+	[ -w "$GPU_MAX_PATH" ] || return 0
+	cur=$(cat "$GPU_MAX_PATH" 2>/dev/null || echo 0)
+	[ "$cur" = "$want" ] && return 0
+	echo "$want" > "$GPU_MAX_PATH" 2>/dev/null || true
+}
+
+# Align kernel passive trips so step_wise also starts near HOT/HARD
+align_trips() {
+	local z t typ idx
+	for z in /sys/class/thermal/thermal_zone0 /sys/class/thermal/thermal_zone1; do
+		[ -d "$z" ] || continue
+		idx=0
+		# trip_point_*_temp in numeric order
+		for t in $(ls "$z"/trip_point_*_temp 2>/dev/null | sort -V); do
+			[ -f "$t" ] || continue
+			typ=$(cat "${t%_temp}_type" 2>/dev/null || true)
+			[ "$typ" = "passive" ] || continue
+			if [ "$idx" -eq 0 ]; then
+				echo "$HOT_MC" > "$t" 2>/dev/null || true
+			elif [ "$idx" -eq 1 ]; then
+				echo "$HARD_MC" > "$t" 2>/dev/null || true
+			fi
+			idx=$((idx + 1))
+		done
+	done
+}
+
+apply_level() {
+	local level=$1 cpu_m=$2 gpu_m=$3
+	set_cpu_max "$cpu_m"
+	set_gpu_max "$gpu_m"
+	if [ "$state" != "$level" ]; then
+		log "level=$level cpu_max=${cpu_m} gpu_max=${gpu_m} cpuT=${cpu_t} gpuT=${gpu_t}"
+		state=$level
+	fi
+}
+
+sleep_ms() {
+	local ms=$1
+	if command -v usleep >/dev/null 2>&1; then
+		usleep $((ms * 1000))
+	else
+		sleep "$(awk "BEGIN{printf \"%.3f\", $ms/1000}")"
+	fi
+}
+
+align_trips
+log "start HOT=${HOT_MC} HARD=${HARD_MC} COOL=${COOL_MC} warm=${WARM_MC} poll_hot=${POLL_HOT_MS}ms poll_cool=${POLL_COOL_MS}ms"
+
+while true; do
+	cpu_t=$(read_temp "$CPU_ZONE")
+	gpu_t=$(read_temp "$GPU_ZONE")
+	# peak of the two
+	peak=$cpu_t
+	[ "$gpu_t" -gt "$peak" ] && peak=$gpu_t
+
+	if [ "$peak" -ge "$HARD_MC" ]; then
+		apply_level hard "$CPU_MAX_HARD" "$GPU_MAX_HARD"
+	elif [ "$peak" -ge "$HOT_MC" ]; then
+		apply_level hot "$CPU_MAX_HOT" "$GPU_MAX_HOT"
+	elif [ "$cpu_t" -lt "$COOL_MC" ] && [ "$gpu_t" -lt "$COOL_MC" ]; then
+		apply_level cool "$CPU_MAX_COOL" "$GPU_MAX_COOL"
+	else
+		# hysteresis band: keep current caps, but refresh writes in case something else raised them
+		case $state in
+			hard) set_cpu_max "$CPU_MAX_HARD"; set_gpu_max "$GPU_MAX_HARD" ;;
+			hot)  set_cpu_max "$CPU_MAX_HOT";  set_gpu_max "$GPU_MAX_HOT" ;;
+			*)    set_cpu_max "$CPU_MAX_COOL"; set_gpu_max "$GPU_MAX_COOL" ;;
+		esac
+	fi
+
+	# >80C: 0.5s; otherwise 2s
+	if [ "$peak" -gt "$WARM_MC" ]; then
+		sleep_ms "$POLL_HOT_MS"
+	else
+		sleep_ms "$POLL_COOL_MS"
+	fi
+done

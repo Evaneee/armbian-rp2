@@ -1,0 +1,61 @@
+From: Evan <evan@local>
+Subject: [PATCH] usb: xhci: delay for Alcor/flash sticks (058f:6387)
+
+Rockchip DWC3/xHCI often fails "Cannot read configuration" on cheap
+USB2 flash drives (Alcor 058f:6387). Add short settle delays before
+GET_STATUS/GET_DESCRIPTOR and around config descriptor reads.
+
+Refs: u-boot ML 2024-05/07 (058f:6387), usb_select_config quirks.
+
+diff -ruN a/common/usb.c b/common/usb.c
+--- a/common/usb.c
++++ b/common/usb.c
+@@ -1190,17 +1190,24 @@
+ 	 * about this first Get Descriptor request. If there are any other
+ 	 * requests in the first microframe, the stick crashes. Wait about
+ 	 * one microframe duration here (1mS for USB 1.x , 125uS for USB 2.0).
++	 *
++	 * Alcor 058f:6387 and similar flash drives on xHCI need a longer
++	 * settle time or GET_DESCRIPTOR/config reads fail with:
++	 * "Cannot read configuration, skipping device".
+ 	 */
+-	mdelay(1);
++	mdelay(5);
+ 
+ 	/* only support for one config for now */
+ 	err = usb_get_configuration_len(dev, 0);
+ 	if (err >= 0) {
+ 		tmpbuf = (unsigned char *)malloc_cache_aligned(err);
+-		if (!tmpbuf)
++		if (!tmpbuf) {
+ 			err = -ENOMEM;
+-		else
++		} else {
++			/* Extra delay before second config descriptor fetch (xHCI). */
++			mdelay(5);
+ 			err = usb_get_configuration_no(dev, 0, tmpbuf, err);
++		}
+ 	}
+ 	if (err < 0) {
+ 		printf("usb_new_device: Cannot read configuration, " \
+diff -ruN a/drivers/usb/host/xhci.c b/drivers/usb/host/xhci.c
+--- a/drivers/usb/host/xhci.c
++++ b/drivers/usb/host/xhci.c
+@@ -1322,6 +1322,17 @@
+ 		while (hop->parent->parent)
+ 			hop = hop->parent;
+ */
++	/*
++	 * Some USB2 sticks (notably Alcor 058f:6387) fail random control
++	 * transfers on Rockchip DWC3/xHCI without a short settle delay
++	 * before GET_STATUS / GET_DESCRIPTOR. See u-boot ML 2024-05/07.
++	 */
++	if (setup &&
++	    (setup->request == USB_REQ_GET_STATUS ||
++	     setup->request == USB_REQ_GET_DESCRIPTOR) &&
++	    (setup->requesttype & USB_TYPE_MASK) == USB_TYPE_STANDARD)
++		mdelay(5);
++
+ 	return _xhci_submit_control_msg(udev, pipe, buffer, length, setup,
+ 					root_portnr);
+ }

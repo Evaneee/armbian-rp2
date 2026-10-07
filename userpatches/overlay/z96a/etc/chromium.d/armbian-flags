@@ -1,0 +1,5 @@
+# Z96A: real Rockchip VPU via Chromium +rkmpp + libv4l-rkmpp (/dev/video-dec0).
+# default-flags (from +rkmpp package) already sets ozone wayland + V4L2 features;
+# only add extras here to avoid conflicting --enable-features duplicates.
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --ignore-gpu-blocklist"
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-zero-copy"

@@ -1,6 +1,6 @@
 [Unit]
 Description=Z96A default audio sink (RK817 speakers)
-# Work with PipeWire (GNOME) or PulseAudio (Cinnamon on noble).
+# Prefer PipeWire / wireplumber (pulseaudio.service kept only for After= ordering).
 After=default.target sound.target pipewire-pulse.service pulseaudio.service wireplumber.service
 Wants=
 

@@ -1,10 +1,9 @@
 #!/bin/bash
-# Force Z96A speaker path on the RK817 codec card (not a hardcoded card index).
-# Speaker amp AW8737 is gated by GPIO3_PA6 via codec "spk-ctl-gpios";
-# that GPIO only goes high when Playback Path is SPK / SPK_HP.
+# Z96A speaker path on mainline RK817 + AW8737 (simple-audio-amplifier).
+# Vendor uses HP channel + spk-ctl GPIO3_PA6; amp is gated by DAPM pin
+# "Internal Speakers". Playback Mux must be HP (not Class-D SPK).
 #
-# Desktop (PipeWire) + rockchip_headset often flip the path back to HP/OFF
-# right after boot — keep re-applying for a while.
+# Apply once and exit — do not hold for tens of seconds (that stalled boot).
 
 set -u
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
@@ -15,7 +14,7 @@ find_card() {
 	local CARD="" c n
 	while read -r idx name rest; do
 		case "$name" in
-			*[Rr][Kk]817*|*[Rr][Kk]809*) CARD="$idx"; break ;;
+			*[Rr][Kk]817*|*[Rr][Kk]809*|*Analog*) CARD="$idx"; break ;;
 		esac
 	done < <(grep -E '^ *[0-9]+ ' /proc/asound/cards 2>/dev/null || true)
 
@@ -23,7 +22,8 @@ find_card() {
 		for c in /proc/asound/card[0-9]*; do
 			[[ -d "$c" ]] || continue
 			n="${c##*card}"
-			if amixer -c "$n" sget 'Playback Path' >/dev/null 2>&1; then
+			if amixer -c "$n" sget 'Playback Mux' >/dev/null 2>&1 \
+				|| amixer -c "$n" sget 'Playback Path' >/dev/null 2>&1; then
 				CARD="$n"
 				break
 			fi
@@ -34,14 +34,23 @@ find_card() {
 
 apply_spk() {
 	local CARD="$1"
-	amixer -c "$CARD" -q set 'Playback Path' SPK \
-		|| amixer -c "$CARD" -q set 'Playback Path' SPK_HP \
-		|| return 1
-	for ctl in Master Speaker Headphone 'DAC' 'Playback'; do
+
+	if amixer -c "$CARD" sget 'Playback Mux' >/dev/null 2>&1; then
+		amixer -c "$CARD" -q set 'Playback Mux' HP || return 1
+	elif amixer -c "$CARD" sget 'Playback Path' >/dev/null 2>&1; then
+		amixer -c "$CARD" -q set 'Playback Path' SPK \
+			|| amixer -c "$CARD" -q set 'Playback Path' SPK_HP \
+			|| return 1
+	fi
+
+	for ctl in 'Internal Speakers' 'Speaker Amplifier Speaker' \
+		'Speaker' 'Master' 'Headphone' 'DAC' 'Playback'; do
 		amixer -c "$CARD" -q set "$ctl" unmute 2>/dev/null || true
+		amixer -c "$CARD" -q set "$ctl" on 2>/dev/null || true
 		amixer -c "$CARD" -q set "$ctl" 80% 2>/dev/null || true
 	done
-	mkdir -p /etc/alsa
+
+	mkdir -p /etc/alsa /run
 	echo "$CARD" > /run/z96a-alsa-card
 	cat > /etc/asound.conf <<EOF
 pcm.!default {
@@ -60,46 +69,25 @@ EOF
 	return 0
 }
 
-# Wait for ALSA cards (PipeWire/desktop may race first boot)
-for _ in $(seq 1 45); do
+for _ in $(seq 1 20); do
 	[[ -d /proc/asound ]] && [[ -n "$(find_card)" ]] && break
 	sleep 1
 done
 
 CARD="$(find_card)"
 if [[ -z "$CARD" ]]; then
-	log "ERROR: no RK817 / Playback Path card found"
+	log "ERROR: no RK817 card found"
 	cat /proc/asound/cards 2>/dev/null || true
 	exit 1
 fi
 
-log "using ALSA card $CARD"
-# Re-apply for ~90s so headset_observe / PipeWire cannot leave amp GPIO off.
-log "holding Playback Path=SPK for ~90s (not hung; waiting out desktop audio races)"
-deadline=$((SECONDS + 90))
-ok=0
-last_log=$SECONDS
-while (( SECONDS < deadline )); do
-	CARD="$(find_card)"
-	[[ -n "$CARD" ]] || { sleep 2; continue; }
-	if apply_spk "$CARD"; then
-		ok=1
-		cur="$(amixer -c "$CARD" sget 'Playback Path' 2>/dev/null | sed -n "s/.*Item0: '\\(.*\\)'.*/\\1/p" | head -1)"
-		if (( SECONDS - last_log >= 15 )); then
-			log "still holding card $CARD path=${cur:-?} (${SECONDS}s)"
-			last_log=$SECONDS
-		fi
-		[[ "$cur" == "SPK" || "$cur" == "SPK_HP" ]] && sleep 2 || sleep 1
-	else
-		sleep 2
-	fi
-done
-
-if (( ok == 0 )); then
-	log "ERROR: failed to set Playback Path on card $CARD"
+log "using ALSA card $CARD (HP mux + Internal Speakers amp)"
+if ! apply_spk "$CARD"; then
+	log "ERROR: failed to enable speaker path on card $CARD"
 	exit 1
 fi
 
-log "Playback Path held on card $CARD; spk-ctl GPIO should be driven by codec"
-amixer -c "$CARD" sget 'Playback Path' 2>/dev/null || true
+log "speaker path set on card $CARD"
+amixer -c "$CARD" sget 'Playback Mux' 2>/dev/null || true
+amixer -c "$CARD" sget 'Internal Speakers' 2>/dev/null || true
 exit 0
