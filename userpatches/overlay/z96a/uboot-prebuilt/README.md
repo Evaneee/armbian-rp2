@@ -83,8 +83,20 @@ Boots to initramfs shell for eMMC debug. See `output/z96a-hybrid/FLASH.txt`.
 
 ## CPU / GPU OC + TF-A
 
-See [`OC-ATF.md`](OC-ATF.md). Canonical flash image: `u-boot-rockchip.bin`
-(= `u-boot-rockchip-atf-usbkbd.bin`: ATF 2088/2208 + GPU 900/1000 + early 1416 + USB kbd).
+See [`OC-ATF.md`](OC-ATF.md).
+
+## Checkpoint (2026-10-07) — before rockusb retry
+
+Canonical local flash image: `u-boot-rockchip.bin` (= `u-boot-rockchip-P8874.bin`).
+
+| Field | Value |
+|-------|-------|
+| Artifact | `2026.07-Sece3-P8874-Hf854-Ve4cc-Bf514-R448a` |
+| Deb | `output/debs/linux-u-boot-z96a-rk3568-laptop-edge_*P8874*.deb` |
+| Features | eDP DRM, USB kbd (`PREBOOT=sleep 1; usb start`), no USB gadget/rockusb |
+| DDR | v1.13 — do not switch to v1.21 |
+
+`u-boot-rockchip-atf-usbkbd.bin` is an older Oct-5 (`Pd839`) snapshot kept for rollback.
 
 ## eMMC HS400 experiment (U-Boot probe)
 
