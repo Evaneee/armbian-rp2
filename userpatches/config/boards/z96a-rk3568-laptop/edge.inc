@@ -12,7 +12,14 @@ function z96a_mainline_archive_dir() {
 }
 
 function post_family_config_branch_edge__z96a_mainline_kernel() {
-	display_alert "${BOARD}" "BRANCH=edge: LINUXFAMILY→rockchip64, patches archive/rockchip64-7.2" "info"
+	# Proprietary package names: linux-{image,dtb,headers}-edge-z96a (not rockchip64 —
+	# so apt.armbian.com cannot overwrite our kernel on apt upgrade).
+	# Keep patches/config on rockchip64-* so we do not move the archive tree.
+	display_alert "${BOARD}" "BRANCH=edge: LINUXFAMILY→z96a (pkgs), patches archive/rockchip64-7.2" "info"
+	declare -g LINUXFAMILY=z96a
+	declare -g LINUXCONFIG=linux-rockchip64-edge
+	declare -g KERNEL_PATCH_ARCHIVE_BASE=rockchip64
+	declare -g KERNELPATCHDIR=archive/rockchip64-7.2
 	# Userpatches: kernel/archive/rockchip64-7.2/{dt/rk3568-z96a.dts,zz-z96a-*.patch,mpp-src/,bat-adc-src/}
 	# Config:     userpatches/config/kernel/linux-rockchip64-edge.config
 	# U-Boot:     common/uboot.inc (same mainline v2026.07 as current/vendor)

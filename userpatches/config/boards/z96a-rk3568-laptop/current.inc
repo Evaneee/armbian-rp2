@@ -5,7 +5,13 @@
 #
 
 function post_family_config_branch_current__z96a_mainline_kernel() {
-	display_alert "${BOARD}" "BRANCH=current: LINUXFAMILY→rockchip64, patches archive/rockchip64-6.18" "info"
+	# Proprietary package names: linux-{image,dtb,headers}-current-z96a (not rockchip64).
+	# Keep patches/config on rockchip64-* so we do not move the archive tree.
+	display_alert "${BOARD}" "BRANCH=current: LINUXFAMILY→z96a (pkgs), patches archive/rockchip64-6.18" "info"
+	declare -g LINUXFAMILY=z96a
+	declare -g LINUXCONFIG=linux-rockchip64-current
+	declare -g KERNEL_PATCH_ARCHIVE_BASE=rockchip64
+	declare -g KERNELPATCHDIR=archive/rockchip64-6.18
 	# Userpatches: kernel/archive/rockchip64-6.18/{dt/,zz-z96a-*.patch};
 	# bat-adc-src + mpp-src are symlinks → rockchip64-7.2 (shared IRQ DC-det driver).
 	# Config:     userpatches/config/kernel/linux-rockchip64-current.config
