@@ -1,0 +1,26 @@
+--- a/drivers/usb/gadget/f_rockusb.c
++++ b/drivers/usb/gadget/f_rockusb.c
+@@ -332,7 +332,12 @@
+ 	memcpy(in_req->buf, buffer, buffer_size);
+ 	in_req->length = buffer_size;
+ 	debug("Transferring 0x%x bytes\n", buffer_size);
+-	usb_ep_dequeue(rockusb_func->in_ep, in_req);
++	/*
++	 * usb_ep_dequeue() before queue is a MUSB workaround. On DWC3 it
++	 * spams "request ... was not queued to ep1in-bulk" (same as fastboot).
++	 */
++	if (IS_ENABLED(CONFIG_USB_MUSB_GADGET))
++		usb_ep_dequeue(rockusb_func->in_ep, in_req);
+ 	ret = usb_ep_queue(rockusb_func->in_ep, in_req, 0);
+ 	if (ret)
+ 		printf("Error %d on queue\n", ret);
+@@ -478,7 +483,8 @@
+ 	in_req->length = transfer_size;
+ 	in_req->complete = tx_handler_ul_image;
+ 	debug("Uploading 0x%x bytes\n", transfer_size);
+-	usb_ep_dequeue(rockusb_func->in_ep, in_req);
++	if (IS_ENABLED(CONFIG_USB_MUSB_GADGET))
++		usb_ep_dequeue(rockusb_func->in_ep, in_req);
+ 	ret = usb_ep_queue(rockusb_func->in_ep, in_req, 0);
+ 	if (ret)
+ 		printf("Error %d on queue\n", ret);

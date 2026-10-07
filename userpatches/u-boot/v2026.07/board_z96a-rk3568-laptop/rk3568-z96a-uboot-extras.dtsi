@@ -230,9 +230,24 @@
 	status = "disabled";
 };
 
+/*
+ * Type-C OTG for "loader" (rockusb): USB2 peripheral (rk3568-generic style).
+ * Laptop keyboard stays on usb_host1. Avoid USB3+gadget — hangs after usb start.
+ */
 &usb_host0_xhci {
+	dr_mode = "peripheral";
 	extcon = <&usb2phy0>;
-	dr_mode = "host";
+	maximum-speed = "high-speed";
+	phys = <&usb2phy0_otg>;
+	phy-names = "usb2-phy";
+	status = "okay";
+};
+
+&usb2phy0 {
+	status = "okay";
+};
+
+&usb2phy0_otg {
 	status = "okay";
 };
 

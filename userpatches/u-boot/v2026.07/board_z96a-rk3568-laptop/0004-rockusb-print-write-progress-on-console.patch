@@ -1,0 +1,63 @@
+--- a/drivers/usb/gadget/f_rockusb.c
++++ b/drivers/usb/gadget/f_rockusb.c
+@@ -490,6 +490,37 @@
+ 		printf("Error %d on queue\n", ret);
+ }
+ 
++/* One sticky console line (\r only). Works on serial + eDP CONSOLE_MUX. */
++static u64 rockusb_session_bytes;
++static u32 rockusb_cmd_lba;
++static unsigned int rockusb_last_pct = 101;
++
++static void rockusb_print_dl_progress(struct f_rockusb *f_rkusb, int done)
++{
++	unsigned int pct;
++	u64 shown;
++
++	if (!f_rkusb->dl_size)
++		return;
++
++	pct = (unsigned int)(((u64)f_rkusb->dl_bytes * 100) /
++			     f_rkusb->dl_size);
++	if (pct > 100)
++		pct = 100;
++	if (done)
++		pct = 100;
++
++	if (!done && pct < rockusb_last_pct + 5 && pct != 100 &&
++	    rockusb_last_pct <= 100)
++		return;
++
++	rockusb_last_pct = pct;
++	shown = rockusb_session_bytes + f_rkusb->dl_bytes;
++	/* Fixed-width + trailing spaces: overwrite previous longer text, no \n */
++	printf("\rrockusb %10llu B  LBA 0x%08x  %3u%%   ",
++	       (unsigned long long)shown, rockusb_cmd_lba, pct);
++}
++
+ /* usb_request complete call back to handle down load image */
+ static void rx_handler_dl_image(struct usb_ep *ep, struct usb_request *req)
+ {
+@@ -528,7 +559,12 @@
+ 	f_rkusb->lba += blkcnt;
+ 
+ 	/* Check if transfer is done */
++	rockusb_print_dl_progress(f_rkusb, 0);
++
+ 	if (f_rkusb->dl_bytes >= f_rkusb->dl_size) {
++		rockusb_print_dl_progress(f_rkusb, 1);
++		rockusb_session_bytes += f_rkusb->dl_size;
++		rockusb_last_pct = 101;
+ 		req->complete = rx_handler_command;
+ 		req->length = EP_BUFFER_SIZE;
+ 		f_rkusb->buf = f_rkusb->buf_head;
+@@ -747,6 +783,9 @@
+ 	f_rkusb->lba = get_unaligned_be32(&cbw->CDB[2]);
+ 	f_rkusb->dl_size = sector_count * f_rkusb->desc->blksz;
+ 	f_rkusb->dl_bytes = 0;
++	rockusb_cmd_lba = f_rkusb->lba;
++	rockusb_last_pct = 101;
++	rockusb_print_dl_progress(f_rkusb, 0);
+ 
+ 	debug("require write %x bytes, %x sectors to lba %x\n",
+ 	      f_rkusb->dl_size, sector_count, f_rkusb->lba);

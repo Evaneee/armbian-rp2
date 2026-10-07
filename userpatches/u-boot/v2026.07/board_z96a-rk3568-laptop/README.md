@@ -38,6 +38,37 @@ LOG=/tmp/z96a-uboot-$(date +%Y%m%d-%H%M%S).log
 Deb: `output/debs/linux-u-boot-z96a-rk3568-laptop-current_*_arm64__2026.07-*.deb`  
 Blob: `cache/sources/u-boot-worktree/u-boot-z96a-rk3568-laptop/v2026.07/u-boot-rockchip.bin`
 
+## USB loader (one command)
+
+After gadget+rockusb build, at U-Boot prompt (USB keyboard OK for this one line):
+
+```text
+loader
+```
+
+Runs `loader_cmd` (default `usb stop; rockusb 0 mmc 0`). Type-C OTG → PC Rockchip device.
+Override: `setenv loader_cmd 'usb stop; rockusb 0 mmc 0'; saveenv`
+Exit: serial `Ctrl+C`, or PC `rkdeveloptool rd`.
+
+DWC3 spam `request … was not queued to ep1in-bulk` during wl is fixed by
+`0003-rockusb-dwc3-skip-stale-IN-dequeue` (same MUSB-only dequeue as fastboot).
+
+**Important:** mainline rockusb needs `READ_FLASH_INFO` (patch `0002-rockusb-…`).
+Without it, `upgrade_tool wl` fails with `can't read flash info` even though OTG
+enumerates. `db` saying `Download boot...skip` is normal in loader mode (not Maskrom).
+
+After this build, from PC (no `db` needed):
+
+```bash
+cd /home/evanee/mygit/armbian-rp2
+UB=cache/sources/u-boot-worktree/u-boot-z96a-rk3568-laptop/v2026.07
+sudo upgrade_tool LD
+sudo upgrade_tool rfi          # should print flash size
+sudo upgrade_tool wl 64 "$UB/u-boot-rockchip.bin"
+sudo upgrade_tool rd
+# or: sudo rkdeveloptool wl 64 "$UB/u-boot-rockchip.bin"
+```
+
 ## Flash (Maskrom + upgrade_tool)
 
 Flash from the compile tree (no copy to `/tmp`). Agent must **ask before flashing**.

@@ -113,6 +113,13 @@ EOF
 			echo 'obj-y += z96a_drm_stubs.o' >> drivers/video/drm/Makefile
 		fi
 	fi
+	# One-shot "loader" cmd: usb stop + rockusb (env loader_cmd overridable)
+	if [[ -f "${src}/stubs/z96a_loader.c" ]]; then
+		cp -a "${src}/stubs/z96a_loader.c" cmd/z96a_loader.c
+		if [[ -f cmd/Makefile ]] && ! grep -q 'z96a_loader' cmd/Makefile; then
+			echo 'obj-y += z96a_loader.o' >> cmd/Makefile
+		fi
+	fi
 
 	# Adapt Radxa DRM APIs to mainline v2026.07 (node_, clk_set_defaults, …)
 	if [[ -x "${src}/adapt-mainline.sh" ]]; then
@@ -389,6 +396,44 @@ function post_config_uboot_target__z96a_select_dtb() {
 			echo "${key}=y" >> .config
 		fi
 	done
+
+	# USB gadget + rockusb for "loader" command (Type-C OTG, see extras dtsi).
+	# ARCH_ROCKCHIP implies FASTBOOT — disable it (RK3568 has no BUF_ADDR default).
+	display_alert "${BOARD}" "U-Boot: gadget + rockusb + loader cmd" "info"
+	for key in CONFIG_USB_GADGET CONFIG_USB_GADGET_DOWNLOAD \
+		CONFIG_USB_FUNCTION_ROCKUSB CONFIG_CMD_ROCKUSB CONFIG_USB_DWC3_GADGET; do
+		if grep -q "^# ${key} is not set" .config; then
+			sed -i "s|^# ${key} is not set|${key}=y|" .config
+		elif ! grep -q "^${key}=y" .config; then
+			echo "${key}=y" >> .config
+		fi
+	done
+	for key in CONFIG_USB_FUNCTION_FASTBOOT CONFIG_CMD_FASTBOOT CONFIG_FASTBOOT \
+		CONFIG_UDP_FUNCTION_FASTBOOT CONFIG_TCP_FUNCTION_FASTBOOT; do
+		if grep -q "^${key}=y" .config; then
+			sed -i "s|^${key}=y|# ${key} is not set|" .config
+		elif ! grep -q "^# ${key} is not set" .config && ! grep -q "^${key}=" .config; then
+			echo "# ${key} is not set" >> .config
+		fi
+	done
+	sed -i '/^CONFIG_FASTBOOT_BUF_ADDR=/d;/^CONFIG_FASTBOOT_BUF_SIZE=/d' .config
+	if grep -q '^CONFIG_USB_GADGET_MANUFACTURER=' .config; then
+		sed -i 's|^CONFIG_USB_GADGET_MANUFACTURER=.*|CONFIG_USB_GADGET_MANUFACTURER="Rockchip"|' .config
+	else
+		echo 'CONFIG_USB_GADGET_MANUFACTURER="Rockchip"' >> .config
+	fi
+	if grep -q '^CONFIG_USB_GADGET_VENDOR_NUM=' .config; then
+		sed -i 's|^CONFIG_USB_GADGET_VENDOR_NUM=.*|CONFIG_USB_GADGET_VENDOR_NUM=0x2207|' .config
+	else
+		echo 'CONFIG_USB_GADGET_VENDOR_NUM=0x2207' >> .config
+	fi
+	if grep -q '^CONFIG_USB_GADGET_PRODUCT_NUM=' .config; then
+		sed -i 's|^CONFIG_USB_GADGET_PRODUCT_NUM=.*|CONFIG_USB_GADGET_PRODUCT_NUM=0x350a|' .config
+	else
+		echo 'CONFIG_USB_GADGET_PRODUCT_NUM=0x350a' >> .config
+	fi
+	# loader_cmd default lives in cmd/z96a_loader.c; override at runtime:
+	#   setenv loader_cmd 'usb stop; rockusb 0 mmc 0'; saveenv
 
 	# Z96A laptop HID keyboard 6080:8060 never returns idle reports — same as
 	# Apple/Keychron. Without this quirk usb_kbd aborts:
