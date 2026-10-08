@@ -78,6 +78,12 @@ function armbian_kernel_config__disable_various_options() {
 	opts_val["LOCALVERSION"]='""' # Must be empty; make is later invoked with LOCALVERSION and it adds up
 }
 
+# Disable DMABUF_DEBUG, which is enabled by default by DEBUG_KERNEL (which is enabled by EXPERT) since v7.3-rc4.
+# It breaks video rendering on rockchip and msm, at least.
+function armbian_kernel_config__disable_dmabuf_debug() {
+	opts_n+=("DMABUF_DEBUG")
+}
+
 # Forces 48-bit virtual and physical addressing on ARM64 architectures.
 # Ensures consistent memory addressing across all ARM64 builds by setting
 # both virtual address (VA) and physical address (PA) bits to 48.
@@ -674,6 +680,26 @@ function armbian_kernel_config__enable_ntsync() {
 #
 # All changes are logged via display_alert for debugging purposes.
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# Forces kernel options to "n", also over an Armbian default from armbian_kernel_config.
+# Use it in a custom_kernel_config hook. A plain opts_n entry loses: opts_y and opts_m apply later.
+# Parameters:
+#   $@ - options: kernel option names without the CONFIG_ prefix
+function kernel_config_force_n() {
+	declare opt keep o
+	declare -a filtered
+	for opt in "$@"; do
+		for keep in opts_y opts_m; do
+			declare -n arr="${keep}"
+			filtered=()
+			for o in "${arr[@]}"; do [[ "${o}" == "${opt}" ]] || filtered+=("${o}"); done
+			arr=("${filtered[@]}")
+			unset -n arr
+		done
+		unset 'opts_val[$opt]'
+		opts_n+=("${opt}")
+	done
+}
 
 # Sets a kernel configuration option to build as a loadable module (=m).
 # Parameters:
