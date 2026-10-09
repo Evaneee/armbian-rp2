@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot: install adbd into /usr/local/bin and start USB ADB gadget.
+# One-shot: install adbd into /usr/local/bin, enable systemd unit, start gadget.
 # Copy this whole directory to the board, then:
 #   cd z96a-adb-bundle && sudo ./enable-adb.sh
 
@@ -20,14 +20,21 @@ fi
 install -m 755 "${HERE}/adbd" /usr/local/bin/adbd
 install -m 755 "${HERE}/z96a-adb" /usr/local/bin/z96a-adb
 # keep old name
-install -m 755 /usr/local/bin/z96a-adb /usr/local/bin/adbservice
+ln -sfn /usr/local/bin/z96a-adb /usr/local/bin/adbservice
+
+if [[ -f "${HERE}/z96a-adb.service" ]]; then
+	install -m 644 "${HERE}/z96a-adb.service" /etc/systemd/system/z96a-adb.service
+	systemctl daemon-reload
+	systemctl enable z96a-adb.service
+fi
 
 export ADBD_BIN=/usr/local/bin/adbd
-/usr/local/bin/z96a-adb start
+/usr/local/bin/z96a-adb restart
 /usr/local/bin/z96a-adb status
 
 echo
 echo "Done. On the PC (USB cable plugged into OTG port):"
 echo "  adb devices"
 echo "  adb shell"
-echo "Stop later: sudo z96a-adb stop"
+echo "Autostart: systemctl enable --now z96a-adb"
+echo "Stop later: sudo systemctl stop z96a-adb"

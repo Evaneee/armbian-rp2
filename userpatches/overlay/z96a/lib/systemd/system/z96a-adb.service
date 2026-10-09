@@ -1,0 +1,17 @@
+[Unit]
+Description=Z96A USB ADB gadget (configfs + adbd, USB2 high-speed)
+After=local-fs.target sys-kernel-config.mount
+Wants=sys-kernel-config.mount
+ConditionPathExists=/sys/class/udc
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=ADBD_BIN=/usr/local/bin/adbd
+ExecStart=/usr/local/bin/z96a-adb start
+ExecStop=/usr/local/bin/z96a-adb stop
+TimeoutStartSec=45
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

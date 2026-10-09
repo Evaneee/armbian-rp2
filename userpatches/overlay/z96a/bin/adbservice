@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-# Compatibility wrapper — see z96a-adb (fixed gadget bring-up).
-exec "$(dirname "$(readlink -f "$0")")/z96a-adb" "$@"
+# Compatibility wrapper — canonical bring-up is z96a-adb.
+exec /usr/local/bin/z96a-adb "$@"

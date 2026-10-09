@@ -28,7 +28,7 @@ function pre_customize_image__z96a_enbluetooth() {
 
 	install -Dm755 "${ov}/bin/bt_load_rtk_firmware" "${SDCARD}/usr/local/bin/bt_load_rtk_firmware"
 	install -Dm755 "${ov}/bin/rtk_hciattach" "${SDCARD}/usr/local/bin/rtk_hciattach"
-	# Canonical bring-up: /etc/z96a/z96a-bt (pipe-stdin btmgmt; ssp/le off then power on)
+	# Canonical bring-up: /etc/z96a/z96a-bt (ssp off → power on → le/bondable; SSP breaks this FW)
 	install -Dm755 "${ov}/etc/z96a/z96a-bt" "${SDCARD}/etc/z96a/z96a-bt"
 	ln -sfn /etc/z96a/z96a-bt "${SDCARD}/usr/local/bin/z96a-bt-post"
 	install -Dm755 "${ov}/bin/z96a-bt-fw-link" "${SDCARD}/usr/local/bin/z96a-bt-fw-link"
@@ -39,9 +39,15 @@ function pre_customize_image__z96a_enbluetooth() {
 	install -Dm644 "${ov}/lib/systemd/system/bluetooth.service.d/z96a-after-hci.conf" \
 		"${SDCARD}/etc/systemd/system/bluetooth.service.d/z96a-after-hci.conf"
 
-	for f in adbd adbservice io jtagactive jtaginquire arping-router; do
+	# USB ADB gadget (USB2 high-speed; see tools/z96a-adb-bundle)
+	for f in adbd z96a-adb adbservice io jtagactive jtaginquire arping-router; do
 		[[ -f "${ov}/bin/${f}" ]] && install -Dm755 "${ov}/bin/${f}" "${SDCARD}/usr/local/bin/${f}"
 	done
+	if [[ -f "${ov}/lib/systemd/system/z96a-adb.service" ]]; then
+		install -Dm644 "${ov}/lib/systemd/system/z96a-adb.service" \
+			"${SDCARD}/lib/systemd/system/z96a-adb.service"
+		chroot_sdcard systemctl enable z96a-adb.service
+	fi
 
 	for m in hci_uart rtw88_8821cs gpio_keys snd-soc-simple-amplifier; do
 		grep -qxF "$m" "${SDCARD}/etc/modules" 2>/dev/null || echo "$m" >> "${SDCARD}/etc/modules"
@@ -73,13 +79,26 @@ function pre_customize_image__z96a_enbluetooth() {
 		"${SDCARD}/etc/default/z96a-lid-blank"
 	chroot_sdcard systemctl enable z96a-lid-blank.service
 
-	# AutoEnable without duplicating [General] (append was breaking main.conf).
+	# BlueZ policy: power owned by z96a-bt (SSP-safe). LE Just Works; no SSP on this FW.
 	if [[ -f "${SDCARD}/etc/bluetooth/main.conf" ]]; then
-		if grep -qE '^#?AutoEnable=' "${SDCARD}/etc/bluetooth/main.conf"; then
-			sed -i 's/^#\?AutoEnable=.*/AutoEnable=false/' "${SDCARD}/etc/bluetooth/main.conf"
-		else
-			sed -i '/^\[General\]/a AutoEnable=false' "${SDCARD}/etc/bluetooth/main.conf"
-		fi
+		local mc="${SDCARD}/etc/bluetooth/main.conf"
+		_z96a_bt_conf_set() {
+			local key="$1" val="$2"
+			if grep -qE "^#?${key}=" "${mc}"; then
+				sed -i "s/^#\?${key}=.*/${key}=${val}/" "${mc}"
+			else
+				sed -i "/^\[General\]/a ${key}=${val}" "${mc}"
+			fi
+		}
+		_z96a_bt_conf_set AutoEnable false
+		_z96a_bt_conf_set JustWorksRepairing always
+		_z96a_bt_conf_set ControllerMode dual
+		_z96a_bt_conf_set FastConnectable true
+		unset -f _z96a_bt_conf_set
+	fi
+	if [[ -f "${ov}/etc/bluetooth/main.conf.d/z96a.conf" ]]; then
+		install -Dm644 "${ov}/etc/bluetooth/main.conf.d/z96a.conf" \
+			"${SDCARD}/etc/bluetooth/main.conf.d/z96a.conf"
 	fi
 
 	# current/edge: uart1 H5 serdev (DT realtek,rtl8821cs-bt) — do not grab ttyS1.

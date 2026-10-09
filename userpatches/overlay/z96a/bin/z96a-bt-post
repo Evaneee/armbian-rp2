@@ -1,7 +1,14 @@
 #!/bin/bash
-# Z96A RTL8821CS
+# Z96A RTL8821CS Bluetooth bring-up
+#
 # btmgmt under systemd cannot epoll stdin (/dev/null -> EPERM) and hangs forever.
 # Feeding a closed pipe (`: | btmgmt ...`) makes epoll see HUP and proceed.
+#
+# Board-tested 2026-10-09 (RTL fw 0xaa8a930d):
+# - power-on with SSP set fails (hci Opcode 0x0c7a / status 0x03) → GNOME toggle dies
+# - SSP cannot be enabled while powered (status 0x03)
+# - Working: ssp off → power on → le on → bondable → pairable/discoverable
+# - Classic BR/EDR without SSP may still prompt a PIN (try 0000); LE uses Just Works/SMP
 set -u
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 log() { echo "z96a-bt: $*"; }
@@ -9,7 +16,6 @@ log() { echo "z96a-bt: $*"; }
 exec 9>/run/z96a-bt.lock
 flock -n 9 || { log "locked"; exit 0; }
 
-# Always run btmgmt with a pipe as stdin
 btm() { : | timeout "$1" btmgmt "${@:2}"; }
 
 powered_ctl() {
@@ -28,7 +34,52 @@ have_ctrl() {
 	[[ "$out" == *Controller* ]]
 }
 
-powered_ctl && { log "already Powered: yes"; exit 0; }
+# Keep adapter usable for GNOME + LE scan/pair (never enable SSP on this FW).
+apply_policy() {
+	btm 5 -i hci0 le on >/dev/null 2>&1 || true
+	btm 5 -i hci0 bondable on >/dev/null 2>&1 || true
+	btm 5 -i hci0 connectable on >/dev/null 2>&1 || true
+	btm 5 -i hci0 pairable on >/dev/null 2>&1 || true
+	# discoverable helps GNOME "visible"; timeout left to bluez default
+	btm 5 -i hci0 discov on >/dev/null 2>&1 || true
+	timeout 3 bluetoothctl pairable on >/dev/null 2>&1 || true
+	timeout 3 bluetoothctl discoverable on >/dev/null 2>&1 || true
+}
+
+bring_up() {
+	local cur
+	cur=$(cur_settings)
+
+	# Must clear SSP before power-on on this firmware
+	if [[ "$cur" == *ssp* ]] || [[ "$cur" != *powered* ]]; then
+		log "ssp off + power on + le/bondable"
+		btm 5 -i hci0 power off >/dev/null 2>&1 || true
+		sleep 1
+		btm 5 -i hci0 ssp off >/dev/null 2>&1 || true
+		btm 5 -i hci0 le on >/dev/null 2>&1 || true
+		btm 5 -i hci0 bondable on >/dev/null 2>&1 || true
+		btm 8 -i hci0 power on >/dev/null 2>&1 || true
+		sleep 1
+	fi
+
+	cur=$(cur_settings)
+	if [[ "$cur" == *powered* ]]; then
+		# If SSP snuck back on, strip it (power-cycle) or GNOME toggle will fail later
+		if [[ "$cur" == *ssp* ]]; then
+			log "clear ssp (keeps gnome toggle working)"
+			btm 5 -i hci0 power off >/dev/null 2>&1 || true
+			sleep 1
+			btm 5 -i hci0 ssp off >/dev/null 2>&1 || true
+			btm 5 -i hci0 le on >/dev/null 2>&1 || true
+			btm 5 -i hci0 bondable on >/dev/null 2>&1 || true
+			btm 8 -i hci0 power on >/dev/null 2>&1 || true
+			sleep 1
+		fi
+		apply_policy
+		return 0
+	fi
+	return 1
+}
 
 log "wait hci0"
 for _ in $(seq 1 40); do [[ -d /sys/class/bluetooth/hci0 ]] && break; sleep 1; done
@@ -52,16 +103,8 @@ done
 have_ctrl || { log "no controller"; exit 1; }
 sleep 1
 
-if powered_ctl; then log "Powered: yes"; exit 0; fi
-
-log "ssp/le off + power on"
-btm 5 -i hci0 ssp off >/dev/null 2>&1 || true
-btm 5 -i hci0 le off >/dev/null 2>&1 || true
-btm 8 -i hci0 power on >/dev/null 2>&1 || true
-sleep 1
-
-if powered_ctl || powered_hci; then
-	log "Powered: yes"
+if bring_up && { powered_ctl || powered_hci; }; then
+	log "Powered: yes cur=$(cur_settings)"
 	exit 0
 fi
 log "fail cur=$(cur_settings)"

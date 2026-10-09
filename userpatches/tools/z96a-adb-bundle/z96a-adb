@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # USB ADB gadget bring-up for Z96A (configfs + FunctionFS + adbd).
-# Prefer running via ./enable-adb.sh from this bundle directory.
+#
+# Board-tested (2026-10-09):
+# - Stay on USB2 high-speed. SuperSpeed rewrites bMaxPacketSize0 to 0x09
+#   (USB3 encoding) and breaks VMware/xHCI set-config (error -32 / Invalid ep0).
+# - Force OTG role=device before bind.
+# - adbd must start before UDC bind so FunctionFS endpoints exist.
 
 set -euo pipefail
 
@@ -9,7 +14,11 @@ GADGET_NAME="${GADGET_NAME:-z96a-adb}"
 CONFIGFS="/sys/kernel/config"
 GADGET_DIR="${CONFIGFS}/usb_gadget/${GADGET_NAME}"
 FFS_MOUNT="/dev/usb-ffs/adb"
-ADBD_BIN="${ADBD_BIN:-${HERE}/adbd}"
+if [[ -x "${HERE}/adbd" ]]; then
+	ADBD_BIN="${ADBD_BIN:-${HERE}/adbd}"
+else
+	ADBD_BIN="${ADBD_BIN:-/usr/local/bin/adbd}"
+fi
 
 die() { echo "z96a-adb: $*" >&2; exit 1; }
 
@@ -25,6 +34,15 @@ ensure_modules() {
 	[[ -x "${ADBD_BIN}" ]] || die "missing executable adbd: ${ADBD_BIN}"
 }
 
+force_device_role() {
+	local rolep
+	for rolep in /sys/class/usb_role/*/role /sys/devices/platform/*/usb_role/*/role; do
+		if [[ -e "${rolep}" ]]; then
+			echo device > "${rolep}" 2>/dev/null || true
+		fi
+	done
+}
+
 pick_udc() {
 	local udc
 	udc="$(ls /sys/class/udc 2>/dev/null | head -n1 || true)"
@@ -32,12 +50,39 @@ pick_udc() {
 	echo "${udc}"
 }
 
+fix_hs_descriptors() {
+	# Must run inside ${GADGET_DIR}
+	echo 0x0200 > bcdUSB
+	printf '64\n' > bMaxPacketSize0
+	if [[ -e max_speed ]]; then
+		echo high-speed > max_speed
+	fi
+}
+
+gadget_is_healthy() {
+	local mps bcd ms
+	[[ -f "${GADGET_DIR}/UDC" ]] || return 1
+	[[ -n "$(cat "${GADGET_DIR}/UDC" 2>/dev/null || true)" ]] || return 1
+	mps="$(cat "${GADGET_DIR}/bMaxPacketSize0" 2>/dev/null || true)"
+	bcd="$(cat "${GADGET_DIR}/bcdUSB" 2>/dev/null || true)"
+	ms="$(cat "${GADGET_DIR}/max_speed" 2>/dev/null || true)"
+	[[ "${mps}" == "64" || "${mps}" == "0x40" ]] || return 1
+	[[ "${bcd}" == "0x200" || "${bcd}" == "0x0200" ]] || return 1
+	# max_speed may be absent on older kernels; if present require HS
+	if [[ -n "${ms}" && "${ms}" != "high-speed" && "${ms}" != "full-speed" ]]; then
+		return 1
+	fi
+	pgrep -x adbd >/dev/null 2>&1 || return 1
+	return 0
+}
+
 do_start() {
 	need_root start
 	ensure_modules
+	force_device_role
 
-	if [[ -f "${GADGET_DIR}/UDC" ]] && [[ -n "$(cat "${GADGET_DIR}/UDC" 2>/dev/null || true)" ]]; then
-		echo "z96a-adb: already bound to UDC $(cat "${GADGET_DIR}/UDC")"
+	if gadget_is_healthy; then
+		echo "z96a-adb: already bound to UDC $(cat "${GADGET_DIR}/UDC") (HS OK)"
 		return 0
 	fi
 
@@ -48,7 +93,10 @@ do_start() {
 
 	echo 0x0200 > bcdUSB
 	echo 0x0100 > bcdDevice
-	echo 64 > bMaxPacketSize0
+	# HS ep0 must be 8/16/32/64 — never 0x09 (USB3 SS encoding)
+	printf '64\n' > bMaxPacketSize0
+	# Stay on USB2 HS (SS breaks VMware / set-config)
+	[[ -e max_speed ]] && echo high-speed > max_speed
 	echo 0x0888 > idVendor
 	echo 0x0888 > idProduct
 
@@ -73,10 +121,12 @@ do_start() {
 	fi
 	sleep 2
 
+	fix_hs_descriptors
+
 	local udc
 	udc="$(pick_udc)"
 	echo "${udc}" > UDC
-	echo "z96a-adb: started (UDC=${udc})"
+	echo "z96a-adb: started (UDC=${udc} max_speed=$(cat max_speed 2>/dev/null || echo n/a) bMax=$(cat bMaxPacketSize0))"
 	echo "On PC: adb devices"
 }
 
@@ -84,7 +134,10 @@ do_stop() {
 	need_root stop
 	if [[ -d "${GADGET_DIR}" ]]; then
 		cd "${GADGET_DIR}"
-		[[ -f UDC ]] && echo "" > UDC 2>/dev/null || true
+		# UDC unbind can block on dwc3; never hang forever
+		if [[ -f UDC ]]; then
+			timeout 3 sh -c 'echo "" > UDC' 2>/dev/null || true
+		fi
 		rm -f configs/config.1/ffs.adb 2>/dev/null || true
 		rmdir functions/ffs.adb 2>/dev/null || true
 		rmdir configs/config.1/strings/0x409 2>/dev/null || true
@@ -93,8 +146,8 @@ do_stop() {
 		cd /
 		rmdir "${GADGET_DIR}" 2>/dev/null || true
 	fi
-	killall adbd 2>/dev/null || true
-	mountpoint -q "${FFS_MOUNT}" 2>/dev/null && umount -f "${FFS_MOUNT}" 2>/dev/null || true
+	killall -9 adbd 2>/dev/null || true
+	mountpoint -q "${FFS_MOUNT}" 2>/dev/null && timeout 3 umount -f "${FFS_MOUNT}" 2>/dev/null || true
 	echo "z96a-adb: stopped"
 }
 
@@ -102,7 +155,15 @@ do_status() {
 	echo "bundle: ${HERE}"
 	echo "adbd:   ${ADBD_BIN}"
 	echo "UDC:    $(ls /sys/class/udc 2>/dev/null | tr '\n' ' ')"
-	[[ -f "${GADGET_DIR}/UDC" ]] && echo "bound:  $(cat "${GADGET_DIR}/UDC")" || echo "bound:  (no)"
+	if [[ -f "${GADGET_DIR}/UDC" ]]; then
+		echo "bound:  $(cat "${GADGET_DIR}/UDC")"
+		echo "bMax:   $(cat "${GADGET_DIR}/bMaxPacketSize0" 2>/dev/null || echo '?')"
+		echo "bcdUSB: $(cat "${GADGET_DIR}/bcdUSB" 2>/dev/null || echo '?')"
+		echo "max_speed: $(cat "${GADGET_DIR}/max_speed" 2>/dev/null || echo n/a)"
+		echo "current_speed: $(cat /sys/class/udc/*/current_speed 2>/dev/null | head -1 || echo '?')"
+	else
+		echo "bound:  (no)"
+	fi
 	pgrep -x adbd >/dev/null 2>&1 && echo "adbd:   running" || echo "adbd:   stopped"
 }
 
