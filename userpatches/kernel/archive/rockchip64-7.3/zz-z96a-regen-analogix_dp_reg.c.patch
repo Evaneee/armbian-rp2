@@ -1,0 +1,157 @@
+--- a/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c
++++ b/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c
+@@ -144,7 +144,15 @@
+ 
+ 	writel(0x0, dp->reg_base + ANALOGIX_DP_SYS_CTL_1);
+ 	writel(0x40, dp->reg_base + ANALOGIX_DP_SYS_CTL_2);
+-	writel(0x0, dp->reg_base + ANALOGIX_DP_SYS_CTL_3);
++	/* Never clobber force-HPD (F_HPD|HPD_CTRL) when forcing STRM_VALID */
++	{
++		u32 sys3 = 0;
++		if (dp->force_hpd)
++			sys3 |= F_HPD | HPD_CTRL;
++		if (dp->video_info.force_stream_valid)
++			sys3 |= VALID_CTRL | F_VALID;
++		writel(sys3, dp->reg_base + ANALOGIX_DP_SYS_CTL_3);
++	}
+ 	writel(0x0, dp->reg_base + ANALOGIX_DP_SYS_CTL_4);
+ 
+ 	writel(0x0, dp->reg_base + ANALOGIX_DP_PKT_SEND_CTL);
+@@ -409,7 +417,7 @@
+ 	u32 reg;
+ 
+ 	reg = readl(dp->reg_base + ANALOGIX_DP_SYS_CTL_3);
+-	reg = (F_HPD | HPD_CTRL);
++	reg |= (F_HPD | HPD_CTRL);
+ 	writel(reg, dp->reg_base + ANALOGIX_DP_SYS_CTL_3);
+ }
+ 
+@@ -523,8 +531,11 @@
+ 	if (dp->phy) {
+ 		union phy_configure_opts phy_cfg = {0};
+ 
++		/* naneng-edp verify_config requires a valid lane count */
++		phy_cfg.dp.lanes = dp->link_train.lane_count;
+ 		phy_cfg.dp.link_rate =
+ 			drm_dp_bw_code_to_link_rate(dp->link_train.link_rate) / 100;
++		phy_cfg.dp.ssc = analogix_dp_ssc_supported(dp);
+ 		phy_cfg.dp.set_rate = true;
+ 		ret = phy_configure(dp->phy, &phy_cfg);
+ 		if (ret && ret != -EOPNOTSUPP) {
+@@ -595,6 +606,9 @@
+ 			phy_cfg.dp.pre[lane] = pe;
+ 		}
+ 
++		phy_cfg.dp.lanes = dp->link_train.lane_count;
++		phy_cfg.dp.link_rate =
++			drm_dp_bw_code_to_link_rate(dp->link_train.link_rate) / 100;
+ 		phy_cfg.dp.set_voltages = true;
+ 		ret = phy_configure(dp->phy, &phy_cfg);
+ 		if (ret && ret != -EOPNOTSUPP) {
+@@ -686,7 +700,12 @@
+ 	reg = CHA_CRI(4) | CHA_CTRL;
+ 	writel(reg, dp->reg_base + ANALOGIX_DP_SYS_CTL_2);
+ 
+-	reg = 0x0;
++	/* Keep force-HPD / force-valid across video init (vendor ORs these). */
++	reg = 0;
++	if (dp->force_hpd)
++		reg |= F_HPD | HPD_CTRL;
++	if (dp->video_info.force_stream_valid)
++		reg |= VALID_CTRL | F_VALID;
+ 	writel(reg, dp->reg_base + ANALOGIX_DP_SYS_CTL_3);
+ 
+ 	reg = VID_HRES_TH(2) | VID_VRES_TH(0);
+@@ -775,6 +794,76 @@
+ 	}
+ }
+ 
++
++void analogix_dp_set_video_format(struct analogix_dp_device *dp)
++{
++	struct video_info *video = &dp->video_info;
++	const struct drm_display_mode *mode = &video->mode;
++	unsigned int hsw, hfp, hbp, vsw, vfp, vbp;
++
++	hsw = mode->crtc_hsync_end - mode->crtc_hsync_start;
++	hfp = mode->crtc_hsync_start - mode->crtc_hdisplay;
++	hbp = mode->crtc_htotal - mode->crtc_hsync_end;
++	vsw = mode->crtc_vsync_end - mode->crtc_vsync_start;
++	vfp = mode->crtc_vsync_start - mode->crtc_vdisplay;
++	vbp = mode->crtc_vtotal - mode->crtc_vsync_end;
++
++	writel(TOTAL_LINE_CFG_L(mode->crtc_vtotal),
++	       dp->reg_base + ANALOGIX_DP_TOTAL_LINE_CFG_L);
++	writel(TOTAL_LINE_CFG_H(mode->crtc_vtotal >> 8),
++	       dp->reg_base + ANALOGIX_DP_TOTAL_LINE_CFG_H);
++	writel(ACTIVE_LINE_CFG_L(mode->crtc_vdisplay),
++	       dp->reg_base + ANALOGIX_DP_ACTIVE_LINE_CFG_L);
++	writel(ACTIVE_LINE_CFG_H(mode->crtc_vdisplay >> 8),
++	       dp->reg_base + ANALOGIX_DP_ACTIVE_LINE_CFG_H);
++	writel(V_F_PORCH_CFG(vfp), dp->reg_base + ANALOGIX_DP_V_F_PORCH_CFG);
++	writel(V_SYNC_WIDTH_CFG(vsw), dp->reg_base + ANALOGIX_DP_V_SYNC_WIDTH_CFG);
++	writel(V_B_PORCH_CFG(vbp), dp->reg_base + ANALOGIX_DP_V_B_PORCH_CFG);
++	writel(TOTAL_PIXEL_CFG_L(mode->crtc_htotal),
++	       dp->reg_base + ANALOGIX_DP_TOTAL_PIXEL_CFG_L);
++	writel(TOTAL_PIXEL_CFG_H(mode->crtc_htotal >> 8),
++	       dp->reg_base + ANALOGIX_DP_TOTAL_PIXEL_CFG_H);
++	writel(ACTIVE_PIXEL_CFG_L(mode->crtc_hdisplay),
++	       dp->reg_base + ANALOGIX_DP_ACTIVE_PIXEL_CFG_L);
++	writel(ACTIVE_PIXEL_CFG_H(mode->crtc_hdisplay >> 8),
++	       dp->reg_base + ANALOGIX_DP_ACTIVE_PIXEL_CFG_H);
++	writel(H_F_PORCH_CFG_L(hfp), dp->reg_base + ANALOGIX_DP_H_F_PORCH_CFG_L);
++	writel(H_F_PORCH_CFG_H(hfp >> 8), dp->reg_base + ANALOGIX_DP_H_F_PORCH_CFG_H);
++	writel(H_SYNC_CFG_L(hsw), dp->reg_base + ANALOGIX_DP_H_SYNC_CFG_L);
++	writel(H_SYNC_CFG_H(hsw >> 8), dp->reg_base + ANALOGIX_DP_H_SYNC_CFG_H);
++	writel(H_B_PORCH_CFG_L(hbp), dp->reg_base + ANALOGIX_DP_H_B_PORCH_CFG_L);
++	writel(H_B_PORCH_CFG_H(hbp >> 8), dp->reg_base + ANALOGIX_DP_H_B_PORCH_CFG_H);
++}
++
++
++
++bool analogix_dp_ssc_supported(struct analogix_dp_device *dp)
++{
++	return dp->plat_data && dp->plat_data->ssc && dp->link_train.ssc;
++}
++
++void analogix_dp_enable_assr_mode(struct analogix_dp_device *dp, bool enable)
++{
++	u32 reg;
++
++	reg = readl(dp->reg_base + ANALOGIX_DP_LINK_POLICY);
++	if (enable)
++		reg |= ALTERNATE_SR_ENABLE;
++	else
++		reg &= ~ALTERNATE_SR_ENABLE;
++	writel(reg, dp->reg_base + ANALOGIX_DP_LINK_POLICY);
++}
++
++void analogix_dp_video_bist_enable(struct analogix_dp_device *dp)
++{
++	u32 reg;
++
++	writel(BIST_EN, dp->reg_base + ANALOGIX_DP_VIDEO_CTL_4);
++	reg = readl(dp->reg_base + ANALOGIX_DP_VIDEO_CTL_10);
++	reg &= ~FORMAT_SEL;
++	writel(reg, dp->reg_base + ANALOGIX_DP_VIDEO_CTL_10);
++}
++
+ void analogix_dp_set_video_timing_mode(struct analogix_dp_device *dp, u32 type)
+ {
+ 	u32 reg;
+@@ -820,6 +909,15 @@
+ {
+ 	u32 reg;
+ 
++	if (dp->video_info.force_stream_valid) {
++		u32 sys3 = readl(dp->reg_base + ANALOGIX_DP_SYS_CTL_3);
++		sys3 |= VALID_CTRL | F_VALID;
++		if (dp->force_hpd)
++			sys3 |= F_HPD | HPD_CTRL;
++		writel(sys3, dp->reg_base + ANALOGIX_DP_SYS_CTL_3);
++		return 0;
++	}
++
+ 	reg = readl(dp->reg_base + ANALOGIX_DP_SYS_CTL_3);
+ 	writel(reg, dp->reg_base + ANALOGIX_DP_SYS_CTL_3);
+ 

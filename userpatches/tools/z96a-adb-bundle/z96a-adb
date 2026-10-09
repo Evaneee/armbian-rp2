@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# USB ADB gadget bring-up for Z96A (configfs + FunctionFS + adbd).
+# Prefer running via ./enable-adb.sh from this bundle directory.
+
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+GADGET_NAME="${GADGET_NAME:-z96a-adb}"
+CONFIGFS="/sys/kernel/config"
+GADGET_DIR="${CONFIGFS}/usb_gadget/${GADGET_NAME}"
+FFS_MOUNT="/dev/usb-ffs/adb"
+ADBD_BIN="${ADBD_BIN:-${HERE}/adbd}"
+
+die() { echo "z96a-adb: $*" >&2; exit 1; }
+
+need_root() {
+	[[ "$(id -u)" -eq 0 ]] || die "run as root: sudo $0 $*"
+}
+
+ensure_modules() {
+	modprobe libcomposite 2>/dev/null || true
+	modprobe usb_f_fs 2>/dev/null || true
+	[[ -d "${CONFIGFS}/usb_gadget" ]] || mount -t configfs none "${CONFIGFS}" 2>/dev/null || true
+	[[ -d "${CONFIGFS}/usb_gadget" ]] || die "configfs usb_gadget missing"
+	[[ -x "${ADBD_BIN}" ]] || die "missing executable adbd: ${ADBD_BIN}"
+}
+
+pick_udc() {
+	local udc
+	udc="$(ls /sys/class/udc 2>/dev/null | head -n1 || true)"
+	[[ -n "${udc}" ]] || die "no UDC in /sys/class/udc"
+	echo "${udc}"
+}
+
+do_start() {
+	need_root start
+	ensure_modules
+
+	if [[ -f "${GADGET_DIR}/UDC" ]] && [[ -n "$(cat "${GADGET_DIR}/UDC" 2>/dev/null || true)" ]]; then
+		echo "z96a-adb: already bound to UDC $(cat "${GADGET_DIR}/UDC")"
+		return 0
+	fi
+
+	[[ -d "${GADGET_DIR}" ]] && { do_stop || true; }
+
+	mkdir -p "${GADGET_DIR}"
+	cd "${GADGET_DIR}"
+
+	echo 0x0200 > bcdUSB
+	echo 0x0100 > bcdDevice
+	echo 64 > bMaxPacketSize0
+	echo 0x0888 > idVendor
+	echo 0x0888 > idProduct
+
+	mkdir -p strings/0x409
+	echo "76543210" > strings/0x409/serialnumber
+	echo "Sunniwell" > strings/0x409/manufacturer
+	echo "z96a" > strings/0x409/product
+
+	mkdir -p configs/config.1/strings/0x409
+	echo 120 > configs/config.1/MaxPower
+	echo "z96acfg" > configs/config.1/strings/0x409/configuration
+
+	mkdir -p functions/ffs.adb
+	ln -sfn functions/ffs.adb configs/config.1/
+
+	mkdir -p "${FFS_MOUNT}"
+	mountpoint -q "${FFS_MOUNT}" || mount -t functionfs adb "${FFS_MOUNT}"
+
+	if ! pgrep -x adbd >/dev/null 2>&1; then
+		"${ADBD_BIN}" &
+		disown || true
+	fi
+	sleep 2
+
+	local udc
+	udc="$(pick_udc)"
+	echo "${udc}" > UDC
+	echo "z96a-adb: started (UDC=${udc})"
+	echo "On PC: adb devices"
+}
+
+do_stop() {
+	need_root stop
+	if [[ -d "${GADGET_DIR}" ]]; then
+		cd "${GADGET_DIR}"
+		[[ -f UDC ]] && echo "" > UDC 2>/dev/null || true
+		rm -f configs/config.1/ffs.adb 2>/dev/null || true
+		rmdir functions/ffs.adb 2>/dev/null || true
+		rmdir configs/config.1/strings/0x409 2>/dev/null || true
+		rmdir configs/config.1 2>/dev/null || true
+		rmdir strings/0x409 2>/dev/null || true
+		cd /
+		rmdir "${GADGET_DIR}" 2>/dev/null || true
+	fi
+	killall adbd 2>/dev/null || true
+	mountpoint -q "${FFS_MOUNT}" 2>/dev/null && umount -f "${FFS_MOUNT}" 2>/dev/null || true
+	echo "z96a-adb: stopped"
+}
+
+do_status() {
+	echo "bundle: ${HERE}"
+	echo "adbd:   ${ADBD_BIN}"
+	echo "UDC:    $(ls /sys/class/udc 2>/dev/null | tr '\n' ' ')"
+	[[ -f "${GADGET_DIR}/UDC" ]] && echo "bound:  $(cat "${GADGET_DIR}/UDC")" || echo "bound:  (no)"
+	pgrep -x adbd >/dev/null 2>&1 && echo "adbd:   running" || echo "adbd:   stopped"
+}
+
+case "${1:-}" in
+	start) do_start ;;
+	stop) do_stop ;;
+	status) do_status ;;
+	restart) do_stop || true; do_start ;;
+	*) echo "Usage: $0 {start|stop|status|restart}"; exit 1 ;;
+esac

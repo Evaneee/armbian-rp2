@@ -1,0 +1,28 @@
+#!/bin/bash
+# CPU/GPU freq+temp + VPU IRQ monitor (no full-screen clear → less flicker)
+trap 'printf "\033[?25h\033[0m"; exit' EXIT INT TERM
+printf "\033[?25l"
+
+while true; do
+	# Move to home only — do NOT clear the whole screen first
+	printf "\033[H"
+
+	cpu_cur=$(($(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq) / 1000))
+	cpu_max=$(($(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq) / 1000))
+	cpu_temp=$(awk "BEGIN{printf \"%.1f\", $(cat /sys/class/thermal/thermal_zone0/temp)/1000}")
+
+	gpu_cur=$(($(cat /sys/class/devfreq/fde60000.gpu/cur_freq) / 1000000))
+	gpu_max=$(($(cat /sys/class/devfreq/fde60000.gpu/max_freq) / 1000000))
+	gpu_temp=$(awk "BEGIN{printf \"%.1f\", $(cat /sys/class/thermal/thermal_zone1/temp)/1000}")
+
+	# \033[K = clear to end of line (erase leftovers from longer previous lines)
+	printf "CPU  %4d/%-4d MHz  %5sC\033[K\n" "$cpu_cur" "$cpu_max" "$cpu_temp"
+	printf "GPU  %4d/%-4d MHz  %5sC\033[K\n" "$gpu_cur" "$gpu_max" "$gpu_temp"
+	printf '%s\033[K\n' '----------------------------------------'
+	grep -iE "rkvdec|vdpu|vpu|rga|iep|vepu|jpegd" /proc/interrupts || true
+
+	# Clear anything left below (shorter interrupt list than last frame)
+	printf "\033[J"
+
+	sleep 0.5
+done

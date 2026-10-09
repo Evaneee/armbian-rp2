@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# Enable USB ADB gadget on Z96A (OTG Type-C / micro).
+# Based on chaoge userpatches/overlay/z96a/bin/adbservice + adbd.
+#
+# Prerequisites on the board:
+#   - /usr/local/bin/adbd   (aarch64 static binary from overlay)
+#   - root
+#   - USB cable to host PC (device mode / OTG)
+#
+# Usage (on board):
+#   sudo z96a-adb start
+#   sudo z96a-adb stop
+#   sudo z96a-adb status
+#
+# Host PC:
+#   adb devices
+#   adb shell
+
+set -euo pipefail
+
+GADGET_NAME="${GADGET_NAME:-z96a-adb}"
+CONFIGFS="/sys/kernel/config"
+GADGET_DIR="${CONFIGFS}/usb_gadget/${GADGET_NAME}"
+FFS_MOUNT="/dev/usb-ffs/adb"
+ADBD_BIN="${ADBD_BIN:-/usr/local/bin/adbd}"
+
+die() { echo "z96a-adb: $*" >&2; exit 1; }
+
+need_root() {
+	[[ "$(id -u)" -eq 0 ]] || die "run as root (sudo $0 $* )"
+}
+
+ensure_modules() {
+	modprobe libcomposite 2>/dev/null || true
+	modprobe usb_f_fs 2>/dev/null || true
+	[[ -d "${CONFIGFS}/usb_gadget" ]] || {
+		mount -t configfs none "${CONFIGFS}" 2>/dev/null || true
+	}
+	[[ -d "${CONFIGFS}/usb_gadget" ]] || die "configfs usb_gadget missing (enable CONFIG_USB_CONFIGFS)"
+	command -v "${ADBD_BIN}" >/dev/null 2>&1 || [[ -x "${ADBD_BIN}" ]] || die "missing ${ADBD_BIN}"
+}
+
+pick_udc() {
+	local udc
+	udc="$(ls /sys/class/udc 2>/dev/null | head -n1 || true)"
+	[[ -n "${udc}" ]] || die "no UDC in /sys/class/udc (USB device controller not ready)"
+	echo "${udc}"
+}
+
+do_start() {
+	need_root start
+	ensure_modules
+
+	if [[ -f "${GADGET_DIR}/UDC" ]] && [[ -n "$(cat "${GADGET_DIR}/UDC" 2>/dev/null || true)" ]]; then
+		echo "z96a-adb: already bound to UDC $(cat "${GADGET_DIR}/UDC")"
+		return 0
+	fi
+
+	# Tear down a half-configured instance if present
+	if [[ -d "${GADGET_DIR}" ]]; then
+		do_stop || true
+	fi
+
+	mkdir -p "${GADGET_DIR}"
+	cd "${GADGET_DIR}"
+
+	echo 0x0200 > bcdUSB
+	echo 0x0100 > bcdDevice
+	echo 64 > bMaxPacketSize0
+	# Keep chaoge VID/PID so host may already trust this pair
+	echo 0x0888 > idVendor
+	echo 0x0888 > idProduct
+
+	mkdir -p strings/0x409
+	echo "76543210" > strings/0x409/serialnumber
+	echo "Sunniwell" > strings/0x409/manufacturer
+	echo "z96a" > strings/0x409/product
+
+	mkdir -p configs/config.1/strings/0x409
+	echo 120 > configs/config.1/MaxPower
+	echo "z96acfg" > configs/config.1/strings/0x409/configuration
+
+	mkdir -p functions/ffs.adb
+	ln -sfn functions/ffs.adb configs/config.1/
+
+	mkdir -p "${FFS_MOUNT}"
+	if ! mountpoint -q "${FFS_MOUNT}"; then
+		mount -t functionfs adb "${FFS_MOUNT}"
+	fi
+
+	# adbd must start before UDC bind so FunctionFS endpoints exist
+	if pgrep -x adbd >/dev/null 2>&1; then
+		echo "z96a-adb: adbd already running"
+	else
+		"${ADBD_BIN}" &
+		disown || true
+	fi
+	sleep 2
+
+	local udc
+	udc="$(pick_udc)"
+	echo "${udc}" > UDC
+	echo "z96a-adb: started (UDC=${udc})"
+	echo "Host: adb devices"
+}
+
+do_stop() {
+	need_root stop
+	if [[ -d "${GADGET_DIR}" ]]; then
+		cd "${GADGET_DIR}"
+		if [[ -f UDC ]]; then
+			echo "" > UDC 2>/dev/null || true
+		fi
+		rm -f configs/config.1/ffs.adb 2>/dev/null || true
+		rmdir functions/ffs.adb 2>/dev/null || true
+		rmdir configs/config.1/strings/0x409 2>/dev/null || true
+		rmdir configs/config.1 2>/dev/null || true
+		rmdir strings/0x409 2>/dev/null || true
+		cd /
+		rmdir "${GADGET_DIR}" 2>/dev/null || true
+	fi
+	killall adbd 2>/dev/null || true
+	if mountpoint -q "${FFS_MOUNT}" 2>/dev/null; then
+		umount -f "${FFS_MOUNT}" 2>/dev/null || true
+	fi
+	echo "z96a-adb: stopped"
+}
+
+do_status() {
+	echo "UDC list: $(ls /sys/class/udc 2>/dev/null | tr '\n' ' ')"
+	if [[ -f "${GADGET_DIR}/UDC" ]]; then
+		echo "gadget UDC: $(cat "${GADGET_DIR}/UDC")"
+	else
+		echo "gadget UDC: (not created)"
+	fi
+	if pgrep -x adbd >/dev/null 2>&1; then
+		echo "adbd: running (pid $(pgrep -x adbd | tr '\n' ' '))"
+	else
+		echo "adbd: not running"
+	fi
+	if mountpoint -q "${FFS_MOUNT}" 2>/dev/null; then
+		echo "ffs: mounted at ${FFS_MOUNT}"
+	else
+		echo "ffs: not mounted"
+	fi
+}
+
+case "${1:-}" in
+	start) do_start ;;
+	stop) do_stop ;;
+	status) do_status ;;
+	restart)
+		do_stop || true
+		do_start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|status|restart}"
+		exit 1
+		;;
+esac

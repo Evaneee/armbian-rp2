@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Evan <evan@local>
+Date: Mon, 5 Oct 2026 11:05:00 +0800
+Subject: [PATCH] drivers/video: wire Rockchip MPP (rk_vcodec) into Kbuild
+
+Sources are copied by userpatches kernel_copy_extra_sources hook into
+drivers/video/rockchip/mpp/ before patching/build.
+
+--- a/drivers/video/Kconfig
++++ b/drivers/video/Kconfig
+@@ -92,4 +92,6 @@
+ 
+ source "drivers/gpu/trace/Kconfig"
+ 
++source "drivers/video/rockchip/Kconfig"
++
+ endmenu
+--- a/drivers/video/Makefile
++++ b/drivers/video/Makefile
+@@ -21,3 +21,5 @@
+ ifeq ($(CONFIG_OF),y)
+ obj-$(CONFIG_VIDEOMODE_HELPERS) += of_display_timing.o of_videomode.o
+ endif
++
++obj-y				  += rockchip/

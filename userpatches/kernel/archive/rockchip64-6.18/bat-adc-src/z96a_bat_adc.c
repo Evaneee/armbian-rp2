@@ -354,3 +354,4 @@ module_platform_driver(z96a_bat_driver);
 MODULE_AUTHOR("Z96A");
 MODULE_DESCRIPTION("Z96A SARADC battery gauge (vendor ADC path)");
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("IIO_CONSUMER");

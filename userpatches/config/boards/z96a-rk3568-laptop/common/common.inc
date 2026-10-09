@@ -140,6 +140,19 @@ function pre_customize_image__z96a_cpu_oc_cpufrequtils() {
 	return 0
 }
 
+function pre_customize_image__z96a_cpu_gpu_mon() {
+	# Live freq/temp + VPU IRQ monitor → /usr/bin/cpu-gpu-mon
+	local ov="${SRC}/userpatches/overlay/z96a"
+	local src="${ov}/usr/bin/cpu-gpu-mon"
+	[[ -f "${src}" ]] || {
+		display_alert "${BOARD}" "skip cpu-gpu-mon: missing ${src}" "wrn"
+		return 0
+	}
+	display_alert "${BOARD}" "image: install /usr/bin/cpu-gpu-mon" "info"
+	install -Dm755 "${src}" "${SDCARD}/usr/bin/cpu-gpu-mon"
+	return 0
+}
+
 function pre_customize_image__z96a_thermal_guard() {
 	# Soft/hard freq caps from thermal zones (HOT 86.5C / HARD 88C).
 	local ov="${SRC}/userpatches/overlay/z96a"
