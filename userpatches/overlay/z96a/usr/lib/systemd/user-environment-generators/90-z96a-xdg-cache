@@ -1,6 +1,11 @@
 #!/bin/sh
 # Put XDG cache on session tmpfs (DDR). Cleared on logout/reboot.
 # Benefit is modest on Z96A (~few MB today); avoids eMMC for growing caches.
+# Mesa shader cache stays on eMMC: recompiling shaders after every boot
+# slows the first GNOME/Chromium frames far more than the few MB it writes.
 [ -n "${XDG_RUNTIME_DIR:-}" ] || exit 0
 mkdir -p "${XDG_RUNTIME_DIR}/xdg-cache" 2>/dev/null || true
 echo "XDG_CACHE_HOME=${XDG_RUNTIME_DIR}/xdg-cache"
+if [ -n "${HOME:-}" ]; then
+	echo "MESA_SHADER_CACHE_DIR=${HOME}/.cache/mesa_shader_cache"
+fi

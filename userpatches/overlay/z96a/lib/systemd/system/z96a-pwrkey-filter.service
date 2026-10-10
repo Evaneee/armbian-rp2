@@ -1,6 +1,6 @@
 [Unit]
 Description=Z96A rk805 power-key debounce (drop DC-jack KEY_POWER glitches)
-After=multi-user.target
+After=systemd-udevd.service systemd-logind.service
 Before=gdm.service
 
 [Service]

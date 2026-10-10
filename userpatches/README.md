@@ -58,6 +58,10 @@ sudo upgrade_tool rd
 | 全屏直通 | **勿**设 `MUTTER_DEBUG_DISABLE_HW_CURSORS`（SW 光标会阻断 Mutter direct scanout） |
 | GNOME 缓存 | `XDG_CACHE_HOME` → `$XDG_RUNTIME_DIR/xdg-cache`（tmpfs；注销清空） |
 | Chromium | `chromium.d/zz-z96a-perf`：去掉 `disable-dev-shm-usage`，disk cache→`$XDG_RUNTIME_DIR` |
+| GDM 不等网络 | `systemd-user-sessions` 去掉 `After=network.target`、禁用空 `rc.local`、pwrkey-filter 不再 `After=multi-user`：greeter 提前约 4s |
+| `/run/user` | logind `RuntimeDirectorySize=1G`（Chromium cache + psd + xdg-cache） |
+| Mesa 着色器缓存 | `MESA_SHADER_CACHE_DIR=~/.cache/mesa_shader_cache`（eMMC，重启不丢） |
+| GPU | udev `min_freq=400M`；禁用 apport / ModemManager / gnome-remote-desktop / cups |
 
 ### 登录后桌面慢（GNOME）
 

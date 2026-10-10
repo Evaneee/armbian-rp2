@@ -161,6 +161,35 @@ function pre_customize_image__z96a_cma_512m() {
 	return 0
 }
 
+function pre_customize_image__z96a_boot_speedups() {
+	display_alert "${BOARD}" "image: boot/desktop speedups (GDM not behind network, GPU min 400M)" "info"
+	# GDM waited for NetworkManager (~5s, rtw88 SDIO probe) through
+	# systemd-user-sessions After=network.target. No network logins here.
+	sed -E '/^After=/s/ ?network\.target//' \
+		"${SDCARD}/usr/lib/systemd/system/systemd-user-sessions.service" \
+		> "${SDCARD}/etc/systemd/system/systemd-user-sessions.service"
+	# Stock /etc/rc.local is just "exit 0" but orders GDM after network-online.
+	[[ -f "${SDCARD}/etc/rc.local" ]] && chmod -x "${SDCARD}/etc/rc.local"
+	mkdir -p "${SDCARD}/etc/NetworkManager/conf.d"
+	printf '[main]\nplugins=keyfile\n' > "${SDCARD}/etc/NetworkManager/conf.d/zz-30-z96a-keyfile-only.conf"
+
+	# /run/user/UID holds the Chromium disk cache (256M), psd profile and
+	# XDG cache; the default 10% of RAM (392M) is too small.
+	mkdir -p "${SDCARD}/etc/systemd/logind.conf.d"
+	printf '[Login]\nRuntimeDirectorySize=1G\n' > "${SDCARD}/etc/systemd/logind.conf.d/20-z96a-runtime-dir.conf"
+
+	# simple_ondemand idles the GPU at 200M; first frames after a click lag.
+	mkdir -p "${SDCARD}/etc/udev/rules.d"
+	echo 'ACTION=="add", SUBSYSTEM=="devfreq", KERNEL=="fde60000.gpu", ATTR{min_freq}="400000000"' \
+		> "${SDCARD}/etc/udev/rules.d/90-z96a-gpu-minfreq.rules"
+
+	chroot_sdcard systemctl disable apport.service apport-autoreport.path apport-autoreport.timer \
+		apport-forward.socket gnome-remote-desktop.service cups-browsed.service cups.service \
+		cups.socket cups.path 2>/dev/null || true
+	chroot_sdcard systemctl mask ModemManager.service 2>/dev/null || true
+	return 0
+}
+
 function pre_customize_image__z96a_cpu_gpu_mon() {
 	# Live freq/temp + VPU IRQ monitor → /usr/bin/cpu-gpu-mon
 	local ov="${SRC}/userpatches/overlay/z96a"
