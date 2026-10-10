@@ -231,16 +231,11 @@
 };
 
 /*
- * Type-C OTG for "loader" (rockusb): USB2 peripheral (rk3568-generic style).
- * Laptop keyboard stays on usb_host1. Avoid USB3+gadget — hangs after usb start.
+ * Type-C OTG is left to BootROM Maskrom / vendor usbplug; U-Boot has no
+ * gadget. Laptop keyboard stays on usb_host1.
  */
 &usb_host0_xhci {
-	dr_mode = "peripheral";
-	extcon = <&usb2phy0>;
-	maximum-speed = "high-speed";
-	phys = <&usb2phy0_otg>;
-	phy-names = "usb2-phy";
-	status = "okay";
+	status = "disabled";
 };
 
 &usb2phy0 {

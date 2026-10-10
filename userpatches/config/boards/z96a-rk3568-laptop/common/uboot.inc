@@ -20,6 +20,9 @@ function post_family_config__z96a_use_mainline_uboot() {
 	declare -g BOOT_SOC="rk3568"
 	# Critical: jammy-proven DDR firmware (not family default v1.21)
 	declare -g DDR_BLOB="rk35/rk3568_ddr_1560MHz_v1.13.bin"
+	# Patched TPL: BOOT_BROM_DOWNLOAD always returns -1 to BootROM (ignore SYS_SRAM
+	# gate 0xa which blocks Maskrom after a normal boot). See overlay/z96a/rkbin/.
+	declare -g Z96A_DDR_TPL_MASKROM="${SRC}/userpatches/overlay/z96a/rkbin/rk3568_ddr_1560MHz_v1.13_maskrom.bin"
 	# Do NOT pack OP-TEE/BL32. Working Jammy FIT has ATF+U-Boot only (no tee).
 	# Packing BL32 made kernel reach initramfs then hard-reset (secure DRAM).
 	declare -g BOOTSCRIPT="boot-z96a.cmd:boot.cmd"
@@ -32,7 +35,8 @@ function post_family_config__z96a_use_mainline_uboot() {
 
 	# Open BL31 (Trusted Firmware-A). BOOT_SCENARIO=binman-atf-mainline builds bl31.elf.
 	# Keep Rockchip DDR TPL only — still required for LPDDR4X on this board.
-	declare -g UBOOT_TARGET_MAP="BL31=bl31.elf ROCKCHIP_TPL=${RKBIN_DIR}/${DDR_BLOB};;u-boot-rockchip.bin"
+	declare -g UBOOT_TARGET_MAP="BL31=bl31.elf ROCKCHIP_TPL=${Z96A_DDR_TPL_MASKROM};;u-boot-rockchip.bin"
+	display_alert "${BOARD}" "DDR TPL: maskrom-friendly v1.13 (${Z96A_DDR_TPL_MASKROM})" "info"
 	unset uboot_custom_postprocess write_uboot_platform write_uboot_platform_mtd
 
 	function write_uboot_platform() {
@@ -113,11 +117,25 @@ EOF
 			echo 'obj-y += z96a_drm_stubs.o' >> drivers/video/drm/Makefile
 		fi
 	fi
-	# One-shot "loader" cmd: usb stop + rockusb (env loader_cmd overridable)
+	# "maskrom" / "loader" cmds: reboot with BOOT_BROM_DOWNLOAD / BOOT_LOADER
 	if [[ -f "${src}/stubs/z96a_loader.c" ]]; then
 		cp -a "${src}/stubs/z96a_loader.c" cmd/z96a_loader.c
 		if [[ -f cmd/Makefile ]] && ! grep -q 'z96a_loader' cmd/Makefile; then
 			echo 'obj-y += z96a_loader.o' >> cmd/Makefile
+		fi
+	fi
+	# SPL: BOOT_LOADER → vendor rk356x usbplug (Rockchip Loader mode).
+	# _loader.bin = stock usbplug with bcdUSB 0x0200→0x0201 (file offset
+	# 0x14f34): RKDevTool/upgrade_tool report Loader iff bcdUSB bit0 is set.
+	if [[ -f "${src}/stubs/z96a_spl_usbplug.c" ]]; then
+		local mr=arch/arm/mach-rockchip/rk3568
+		cp -a "${src}/stubs/z96a_spl_usbplug.c" "${mr}/z96a_spl_usbplug.c"
+		cp -a "${SRC}/userpatches/overlay/z96a/rkbin/rk356x_usbplug_v1.21_loader.bin" "${mr}/rk356x_usbplug.bin"
+		if ! grep -q 'z96a_spl_usbplug' "${mr}/Makefile"; then
+			cat >> "${mr}/Makefile" <<'EOF'
+obj-$(CONFIG_XPL_BUILD) += z96a_spl_usbplug.o
+CFLAGS_z96a_spl_usbplug.o += -DZ96A_USBPLUG_BIN='"$(srctree)/arch/arm/mach-rockchip/rk3568/rk356x_usbplug.bin"'
+EOF
 		fi
 	fi
 
@@ -397,18 +415,13 @@ function post_config_uboot_target__z96a_select_dtb() {
 		fi
 	done
 
-	# USB gadget + rockusb for "loader" command (Type-C OTG, see extras dtsi).
-	# ARCH_ROCKCHIP implies FASTBOOT — disable it (RK3568 has no BUF_ADDR default).
-	display_alert "${BOARD}" "U-Boot: gadget + rockusb + loader cmd" "info"
+	# No U-Boot USB gadget: flashing uses BootROM Maskrom ("maskrom") or the
+	# vendor usbplug Loader ("loader", started from SPL). Drops rockusb and
+	# the ARCH_ROCKCHIP-implied fastboot.
+	display_alert "${BOARD}" "U-Boot: no gadget/rockusb/fastboot (maskrom + vendor loader)" "info"
 	for key in CONFIG_USB_GADGET CONFIG_USB_GADGET_DOWNLOAD \
-		CONFIG_USB_FUNCTION_ROCKUSB CONFIG_CMD_ROCKUSB CONFIG_USB_DWC3_GADGET; do
-		if grep -q "^# ${key} is not set" .config; then
-			sed -i "s|^# ${key} is not set|${key}=y|" .config
-		elif ! grep -q "^${key}=y" .config; then
-			echo "${key}=y" >> .config
-		fi
-	done
-	for key in CONFIG_USB_FUNCTION_FASTBOOT CONFIG_CMD_FASTBOOT CONFIG_FASTBOOT \
+		CONFIG_USB_FUNCTION_ROCKUSB CONFIG_CMD_ROCKUSB CONFIG_USB_DWC3_GADGET \
+		CONFIG_USB_FUNCTION_FASTBOOT CONFIG_CMD_FASTBOOT CONFIG_FASTBOOT \
 		CONFIG_UDP_FUNCTION_FASTBOOT CONFIG_TCP_FUNCTION_FASTBOOT; do
 		if grep -q "^${key}=y" .config; then
 			sed -i "s|^${key}=y|# ${key} is not set|" .config
@@ -417,23 +430,7 @@ function post_config_uboot_target__z96a_select_dtb() {
 		fi
 	done
 	sed -i '/^CONFIG_FASTBOOT_BUF_ADDR=/d;/^CONFIG_FASTBOOT_BUF_SIZE=/d' .config
-	if grep -q '^CONFIG_USB_GADGET_MANUFACTURER=' .config; then
-		sed -i 's|^CONFIG_USB_GADGET_MANUFACTURER=.*|CONFIG_USB_GADGET_MANUFACTURER="Rockchip"|' .config
-	else
-		echo 'CONFIG_USB_GADGET_MANUFACTURER="Rockchip"' >> .config
-	fi
-	if grep -q '^CONFIG_USB_GADGET_VENDOR_NUM=' .config; then
-		sed -i 's|^CONFIG_USB_GADGET_VENDOR_NUM=.*|CONFIG_USB_GADGET_VENDOR_NUM=0x2207|' .config
-	else
-		echo 'CONFIG_USB_GADGET_VENDOR_NUM=0x2207' >> .config
-	fi
-	if grep -q '^CONFIG_USB_GADGET_PRODUCT_NUM=' .config; then
-		sed -i 's|^CONFIG_USB_GADGET_PRODUCT_NUM=.*|CONFIG_USB_GADGET_PRODUCT_NUM=0x350a|' .config
-	else
-		echo 'CONFIG_USB_GADGET_PRODUCT_NUM=0x350a' >> .config
-	fi
-	# loader_cmd default lives in cmd/z96a_loader.c; override at runtime:
-	#   setenv loader_cmd 'usb stop; rockusb 0 mmc 0'; saveenv
+
 
 	# Z96A laptop HID keyboard 6080:8060 never returns idle reports — same as
 	# Apple/Keychron. Without this quirk usb_kbd aborts:
@@ -627,6 +624,38 @@ t2, n = re.subn(
 if n != 1:
     raise SystemExit(f"failed to patch rockchip_dnl_key_pressed (n={n})")
 p.write_text(t2)
+PY
+	fi
+
+	# U-Boot "reset" must go through PSCI: TF-A moves the CPU off PVTPLL
+	# (ATF 1012/1014) before GLB_SRST_FST. The CRU-direct rockchip_sysreset
+	# hangs before BootROM once the CPU runs on PVTPLL. SPL keeps CRU reset.
+	display_alert "${BOARD}" "U-Boot: reset via PSCI (not CRU direct)" "info"
+	if grep -q '^# CONFIG_SYSRESET_PSCI is not set' .config; then
+		sed -i 's|^# CONFIG_SYSRESET_PSCI is not set|CONFIG_SYSRESET_PSCI=y|' .config
+	elif ! grep -q '^CONFIG_SYSRESET_PSCI=y' .config; then
+		echo 'CONFIG_SYSRESET_PSCI=y' >> .config
+	fi
+	if [[ -f drivers/clk/rockchip/clk_rk3568.c ]] && ! grep -q 'z96a_psci_reset' drivers/clk/rockchip/clk_rk3568.c; then
+		python3 - <<'PY'
+from pathlib import Path
+p = Path("drivers/clk/rockchip/clk_rk3568.c")
+t = p.read_text()
+old = ("\t/* The reset driver does not have a device node, so bind it here */\n"
+       "\tret = device_bind_driver(dev, \"rockchip_sysreset\", \"sysreset\",\n"
+       "\t\t\t\t &sys_child);\n"
+       "\tif (ret) {\n")
+new = ("\t/* The reset driver does not have a device node, so bind it here */\n"
+       "\tif (!IS_ENABLED(CONFIG_XPL_BUILD) &&\n"
+       "\t    IS_ENABLED(CONFIG_SYSRESET_PSCI)) /* z96a_psci_reset */\n"
+       "\t\tret = -ENODEV;\n"
+       "\telse\n"
+       "\t\tret = device_bind_driver(dev, \"rockchip_sysreset\", \"sysreset\",\n"
+       "\t\t\t\t\t &sys_child);\n"
+       "\tif (ret) {\n")
+if old not in t:
+    raise SystemExit("failed to patch rk3568_clk_bind sysreset")
+p.write_text(t.replace(old, new, 1))
 PY
 	fi
 }
