@@ -64,6 +64,22 @@ function pre_customize_image__z96a_ensound() {
 		"${SDCARD}/etc/dconf/db/local.d/03-z96a-gnome-login"
 	install -Dm644 "${ov}/etc/environment.d/90-z96a-gnome.conf" \
 		"${SDCARD}/etc/environment.d/90-z96a-gnome.conf"
+	# User cache → session tmpfs (DDR); cleared on logout.
+	if [[ -f "${ov}/usr/lib/systemd/user-environment-generators/90-z96a-xdg-cache" ]]; then
+		install -Dm755 "${ov}/usr/lib/systemd/user-environment-generators/90-z96a-xdg-cache" \
+			"${SDCARD}/usr/lib/systemd/user-environment-generators/90-z96a-xdg-cache"
+	fi
+	if [[ -f "${ov}/etc/skel/.config/environment.d/90-z96a-xdg-cache.conf" ]]; then
+		install -Dm644 "${ov}/etc/skel/.config/environment.d/90-z96a-xdg-cache.conf" \
+			"${SDCARD}/etc/skel/.config/environment.d/90-z96a-xdg-cache.conf"
+		local home_dir
+		for home_dir in "${SDCARD}"/home/*; do
+			[[ -d "${home_dir}" ]] || continue
+			install -Dm644 "${ov}/etc/skel/.config/environment.d/90-z96a-xdg-cache.conf" \
+				"${home_dir}/.config/environment.d/90-z96a-xdg-cache.conf"
+			chown -R --reference="${home_dir}" "${home_dir}/.config/environment.d" 2>/dev/null || true
+		done
+	fi
 	for f in geoclue-demo-agent org.gnome.Evolution-alarm-notify pulseaudio \
 		org.gnome.SettingsDaemon.Wacom org.gnome.SettingsDaemon.Smartcard \
 		org.gnome.SettingsDaemon.PrintNotifications org.gnome.SettingsDaemon.Wwan \

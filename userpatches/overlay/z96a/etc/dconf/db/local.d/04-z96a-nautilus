@@ -1,0 +1,10 @@
+# Lighter Files UI on RK3568 (stock Nautilus desktop / Dock behavior unchanged).
+[org/gnome/nautilus/preferences]
+fts-enabled=false
+default-folder-viewer='list-view'
+show-image-thumbnails='never'
+show-directory-item-counts='never'
+
+[org/gnome/shell/extensions/dash-to-dock]
+isolate-locations=false
+click-action='focus-or-previews'

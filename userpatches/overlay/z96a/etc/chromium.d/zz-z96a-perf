@@ -1,0 +1,22 @@
+# Z96A Chromium UI responsiveness (sourced last — name zz-*).
+#
+# Debian's chromium.d/dev-shm forces --disable-dev-shm-usage when /dev/shm < 3.8G.
+# On a 4GB board /dev/shm is ~2G, so every launch spills shared memory into /tmp
+# (many Chromium.*. files) and makes clicks/compositor feel laggy.
+# Re-enable /dev/shm: 2G is enough for this device.
+#
+# Also put HTTP disk cache on tmpfs and cap size so eMMC does not stall the UI.
+
+# Strip flag added by chromium.d/dev-shm (may appear with surrounding spaces).
+CHROMIUM_FLAGS="$(printf '%s' "$CHROMIUM_FLAGS" | sed -e 's/[[:space:]]*--disable-dev-shm-usage//g')"
+export CHROMIUM_FLAGS
+
+# Disk / HTTP cache → tmpfs (profile itself may already be under psd on /run).
+_cache_root="${XDG_RUNTIME_DIR:-/tmp}"
+mkdir -p "${_cache_root}/chromium-disk-cache" 2>/dev/null || true
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disk-cache-dir=${_cache_root}/chromium-disk-cache"
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disk-cache-size=268435456"
+unset _cache_root
+
+# Match CPU count better than package default (often 2).
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --num-raster-threads=4"

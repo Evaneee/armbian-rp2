@@ -1,0 +1,6 @@
+#!/bin/sh
+# Put XDG cache on session tmpfs (DDR). Cleared on logout/reboot.
+# Benefit is modest on Z96A (~few MB today); avoids eMMC for growing caches.
+[ -n "${XDG_RUNTIME_DIR:-}" ] || exit 0
+mkdir -p "${XDG_RUNTIME_DIR}/xdg-cache" 2>/dev/null || true
+echo "XDG_CACHE_HOME=${XDG_RUNTIME_DIR}/xdg-cache"

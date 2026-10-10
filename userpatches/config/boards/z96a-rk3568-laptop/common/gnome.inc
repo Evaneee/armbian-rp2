@@ -53,7 +53,8 @@ function pre_customize_image__z96a_ubuntu_like_gnome() {
 	mkdir -p "${SDCARD}/etc/dconf/db/local.d" "${SDCARD}/etc/dconf/profile"
 	cat > "${SDCARD}${keys}" <<- EOF
 		[org/gnome/shell]
-		enabled-extensions=['ubuntu-dock@ubuntu.com', 'ding@rastersoft.com', 'ubuntu-appindicators@ubuntu.com']
+		enabled-extensions=['ubuntu-dock@ubuntu.com', 'ubuntu-appindicators@ubuntu.com']
+		disabled-extensions=['ding@rastersoft.com']
 		favorite-apps=['org.gnome.Nautilus.desktop', 'chromium.desktop', 'org.gnome.Terminal.desktop', 'org.gnome.TextEditor.desktop', 'org.gnome.Calculator.desktop']
 
 		[org/gnome/shell/extensions/dash-to-dock]
@@ -63,6 +64,7 @@ function pre_customize_image__z96a_ubuntu_like_gnome() {
 		show-trash=false
 		show-mounts=true
 		click-action='focus-or-previews'
+		isolate-locations=false
 		multi-monitor=true
 
 		[org/gnome/desktop/interface]
@@ -103,6 +105,13 @@ function pre_customize_image__z96a_ubuntu_like_gnome() {
 		[org/gnome/shell/extensions/ding]
 		terminal='gnome-terminal'
 
+		# tracker-miner-fs-3 is masked — keep FTS off; light UI for RK3568.
+		[org/gnome/nautilus/preferences]
+		fts-enabled=false
+		default-folder-viewer='list-view'
+		show-image-thumbnails='never'
+		show-directory-item-counts='never'
+
 		[org/gnome/desktop/background]
 		picture-uri='${wp_uri}'
 		picture-uri-dark='${wp_uri_dark}'
@@ -133,7 +142,8 @@ function pre_customize_image__z96a_ubuntu_like_gnome() {
 	mkdir -p "${SDCARD}/usr/share/glib-2.0/schemas"
 	cat > "${SDCARD}/usr/share/glib-2.0/schemas/90_z96a-ubuntu-gnome.gschema.override" <<- EOF
 		[org.gnome.shell]
-		enabled-extensions=['ubuntu-dock@ubuntu.com', 'ding@rastersoft.com', 'ubuntu-appindicators@ubuntu.com']
+		enabled-extensions=['ubuntu-dock@ubuntu.com', 'ubuntu-appindicators@ubuntu.com']
+		disabled-extensions=['ding@rastersoft.com']
 		favorite-apps=['org.gnome.Nautilus.desktop', 'chromium.desktop', 'org.gnome.Terminal.desktop', 'org.gnome.TextEditor.desktop', 'org.gnome.Calculator.desktop']
 		disable-user-extensions=false
 		welcome-dialog-last-shown-version='99.0'
@@ -145,6 +155,7 @@ function pre_customize_image__z96a_ubuntu_like_gnome() {
 		show-trash=false
 		show-mounts=true
 		click-action='focus-or-previews'
+		isolate-locations=false
 		multi-monitor=true
 
 		[org.gnome.desktop.interface]
@@ -177,6 +188,12 @@ function pre_customize_image__z96a_ubuntu_like_gnome() {
 		[org.gnome.desktop.default-applications.terminal]
 		exec='gnome-terminal'
 		exec-arg='--'
+
+		[org.gnome.nautilus.preferences]
+		fts-enabled=false
+		default-folder-viewer='list-view'
+		show-image-thumbnails='never'
+		show-directory-item-counts='never'
 	EOF
 	if [[ ! -f "${SDCARD}/usr/share/backgrounds/armbian/${wp_light}" ]]; then
 		exit_with_error "${BOARD}" "default wallpaper not staged: ${wp_light}"
@@ -296,3 +313,19 @@ function pre_customize_image__z96a_ubuntu_like_gnome() {
 		done
 	fi
 }
+
+function pre_customize_image__z96a_nautilus_prefs() {
+	# Prefs / Dock only — never override org.gnome.Nautilus.desktop (breaks new-window / focus).
+	local ov="${SRC}/userpatches/overlay/z96a"
+	local dconf_d="${ov}/etc/dconf/db/local.d"
+	display_alert "${BOARD}" "image: gnome dconf (ding off, nautilus, dock)" "info"
+	[[ -f "${dconf_d}/01-z96a-ding" ]] &&
+		install -Dm644 "${dconf_d}/01-z96a-ding" "${SDCARD}/etc/dconf/db/local.d/01-z96a-ding"
+	[[ -f "${dconf_d}/03-z96a-gnome-login" ]] &&
+		install -Dm644 "${dconf_d}/03-z96a-gnome-login" "${SDCARD}/etc/dconf/db/local.d/03-z96a-gnome-login"
+	[[ -f "${dconf_d}/04-z96a-nautilus" ]] &&
+		install -Dm644 "${dconf_d}/04-z96a-nautilus" "${SDCARD}/etc/dconf/db/local.d/04-z96a-nautilus"
+	chroot_sdcard dconf update || true
+	return 0
+}
+

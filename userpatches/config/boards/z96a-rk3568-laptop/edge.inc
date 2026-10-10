@@ -165,6 +165,11 @@ function pre_customize_image__z96a_mpp_udev() {
 		"${SDCARD}/etc/apt/preferences.d/rkmpp-chromium"
 	install -Dm644 "${ov}/etc/chromium.d/armbian-flags" \
 		"${SDCARD}/etc/chromium.d/armbian-flags"
+	# UI lag fix: undo Debian --disable-dev-shm-usage; disk cache on tmpfs (see file).
+	if [[ -f "${ov}/etc/chromium.d/zz-z96a-perf" ]]; then
+		install -Dm644 "${ov}/etc/chromium.d/zz-z96a-perf" \
+			"${SDCARD}/etc/chromium.d/zz-z96a-perf"
+	fi
 	install -Dm644 "${ov}/lib/systemd/system/z96a-rkmpp-v4l-nodes.service" \
 		"${SDCARD}/lib/systemd/system/z96a-rkmpp-v4l-nodes.service"
 	# Overlay fallback; rockchip-multimedia-config also ships /usr/bin/...

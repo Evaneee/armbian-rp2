@@ -53,8 +53,11 @@ sudo upgrade_tool rd
 | 喇叭路径脚本 | `overlay/z96a/bin/z96a-ensound` + `amixer_enspk1.service`（设一次即退出，勿空等） |
 | BT 固件 | `overlay/z96a/bluetooth/rtl8821cs_{fw,config}` + `.bin` symlink（mainline btrtl） |
 | BT 就绪 | `z96a-bt-post` / `z96a-bt-ready.service`；`bluetooth-rtl8821cs` 仅作 fallback |
-| 开机加速 | 镜像阶段 `mask plymouth-quit-wait`；GDM `MUTTER_DEBUG_DISABLE_HW_CURSORS=1` |
-| 登录→桌面 | 密码后约 30s 主要是 GNOME Shell JS：DING / Evolution / GeoClue / Tracker；见下 |
+| 开机加速 | 镜像阶段 `mask plymouth-quit-wait`；CPU 由 `/etc/default/cpufrequtils`（`armbian-hardware-optimize`） |
+| 登录→桌面 | 密码后约 30s 主要是 GNOME Shell JS：Evolution / GeoClue / Tracker；见下 |
+| 全屏直通 | **勿**设 `MUTTER_DEBUG_DISABLE_HW_CURSORS`（SW 光标会阻断 Mutter direct scanout） |
+| GNOME 缓存 | `XDG_CACHE_HOME` → `$XDG_RUNTIME_DIR/xdg-cache`（tmpfs；注销清空） |
+| Chromium | `chromium.d/zz-z96a-perf`：去掉 `disable-dev-shm-usage`，disk cache→`$XDG_RUNTIME_DIR` |
 
 ### 登录后桌面慢（GNOME）
 
@@ -62,15 +65,16 @@ journal 时间线（密码 → “GNOME Shell started” ≈30s）：mutter/KMS 
 
 | 措施 | 文件 / 动作 |
 |------|-------------|
-| 关掉桌面图标扩展 DING、关动画 | `overlay/z96a/etc/dconf/db/local.d/03-z96a-gnome-login` |
+| 关掉 DING（减 Xwayland/合成；桌面右键菜单会变少）、关动画 | `dconf/local.d/01-z96a-ding` + `03-z96a-gnome-login` |
 | 禁用 Evolution / GeoClue / 无用 GSD / snap / pulseaudio | `overlay/z96a/etc/xdg/autostart/*.desktop`（`Hidden=true`） |
 | Dock 缺 typelib | 镜像装 `gir1.2-dbusmenu-glib-0.4` |
 | Tracker + Evolution EDS | `systemctl --global mask tracker-miner-fs-3` / `evolution-*-factory` |
-| GSK/mutter 环境 | `etc/environment.d/90-z96a-gnome.conf` + GDM drop-in |
+| GSK = ngl；HW cursor 保持开启（利于全屏 scanout） | `environment.d/90-z96a-gnome.conf` + `gdm.service.d/z96a-mutter.conf` |
+| Files 轻量偏好（勿改 `.desktop`） | `dconf/local.d/04-z96a-nautilus`；Dock `focus-or-previews` |
 
 黑屏原因：输完密码后 GDM 收掉 greeter，新 `gnome-shell` Wayland 抢 DRM，首帧出来前整屏黑（本机约 25–30s）。上述只缩短超时，无法变成瞬时切屏。
 
-已装系统：登出再登或重启验证；需要桌面图标：`gnome-extensions enable ding@rastersoft.com`。
+已装系统：登出再登或重启验证。需要桌面图标/右键菜单时可再开 DING：`gnome-extensions enable ding@rastersoft.com`（可能影响全屏直通）。
 
 ```bash
 ./compile.sh build \

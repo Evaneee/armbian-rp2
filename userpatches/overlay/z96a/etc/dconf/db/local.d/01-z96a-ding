@@ -1,2 +1,5 @@
+# DING off: Xwayland + desktop compose blocks Mutter direct scanout A/B.
+# Re-add ding@rastersoft.com here if desktop right-click menu is required.
 [org/gnome/shell]
-enabled-extensions=['ubuntu-dock@ubuntu.com', 'ubuntu-appindicators@ubuntu.com', 'ding@rastersoft.com']
+enabled-extensions=['ubuntu-dock@ubuntu.com', 'ubuntu-appindicators@ubuntu.com']
+disabled-extensions=['ding@rastersoft.com']

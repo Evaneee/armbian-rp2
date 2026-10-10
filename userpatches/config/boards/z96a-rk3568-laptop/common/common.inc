@@ -140,6 +140,27 @@ function pre_customize_image__z96a_cpu_oc_cpufrequtils() {
 	return 0
 }
 
+function pre_customize_image__z96a_cma_512m() {
+	# RK3568 Chromium/VPU zero-copy needs a larger CMA than the 128/256M default.
+	# Written into armbianEnv.txt so bootscript ${extraargs} picks it up.
+	local envf="${SDCARD}/boot/armbianEnv.txt"
+	display_alert "${BOARD}" "image: extraargs cma=512M (Chromium/VPU)" "info"
+	mkdir -p "${SDCARD}/boot"
+	if [[ -f "${envf}" ]] && grep -qE '^extraargs=' "${envf}"; then
+		# Replace or append cma= inside existing extraargs=
+		if grep -qE '^extraargs=.*cma=' "${envf}"; then
+			sed -i -E 's/(^extraargs=.*)cma=[^[:space:]]+/\1cma=512M/' "${envf}"
+		else
+			sed -i -E 's/^extraargs=(.*)$/extraargs=\1 cma=512M/' "${envf}"
+		fi
+	elif [[ -f "${envf}" ]]; then
+		echo 'extraargs=cma=512M' >> "${envf}"
+	else
+		printf '%s\n' 'verbosity=1' 'extraargs=cma=512M' > "${envf}"
+	fi
+	return 0
+}
+
 function pre_customize_image__z96a_cpu_gpu_mon() {
 	# Live freq/temp + VPU IRQ monitor → /usr/bin/cpu-gpu-mon
 	local ov="${SRC}/userpatches/overlay/z96a"
