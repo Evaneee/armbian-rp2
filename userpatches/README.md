@@ -15,6 +15,14 @@
 
 关键点：强制 `STRM_VALID` 时必须保留 force-HPD（`SYS_CTL_3` 含 `F_HPD|HPD_CTRL`）。刷机后 dmesg 应见 `z96a-edp-v19` / `force STRM_VALID+HPD`。
 
+整改报告（原理、排查过程、验证结果）：
+
+| 报告 | 内容 |
+|------|------|
+| [`docs/z96a/2026-10-uboot-reboot-modes.md`](docs/z96a/2026-10-uboot-reboot-modes.md) | `reset` / `maskrom` / `loader`（原厂 usbplug）、PVTPLL 复位卡死、去掉 rockusb |
+| [`docs/z96a/2026-10-bluetooth.md`](docs/z96a/2026-10-bluetooth.md) | SSP 免密配对（关 SC）、音频跟随蓝牙耳机、Inquiry 导致 A2DP 卡顿、默认不可发现 |
+| [`docs/z96a/2026-10-boot-cache-perf.md`](docs/z96a/2026-10-boot-cache-perf.md) | GDM 不等网络、`/run/user` 1G、Mesa 着色器缓存、GPU 最低频率、禁用服务 |
+
 ### U-Boot：USB HID + eDP vidconsole（mainline v2026.07）
 
 栈不变：`tag:v2026.07` + DDR **v1.13** + Rock 3A defconfig + RK817 DTS。  
@@ -148,6 +156,7 @@ userpatches/
 ├── linux-*.config                  # 板级内核 defconfig（按需）
 ├── kernel/rk35xx-vendor-6.1/       # RP + Z96A 的 vendor 补丁 / dt/
 │   └── dt/rk3568-z96a.dts
+├── docs/z96a/                      # Z96A 整改报告
 └── overlay/                        # 固件与工具（Z96A 蓝牙等）
 ```
 
