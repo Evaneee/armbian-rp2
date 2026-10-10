@@ -33,3 +33,8 @@ DTB: `rockchip/rk3568-z96a.dtb` in `linux-dtb-edge-rockchip64`.
 - Kernel patches were copied from `archive/rockchip64-6.18/`; refresh if 7.2 rejects.
 - Kconfig delta vs stock edge: DRM_ROCKCHIP/PANEL_SIMPLE/BACKLIGHT_PWM=y + NANENG_EDP=y
   (see `userpatches/config/kernel/linux-rockchip64-edge.config`).
+
+## USB webcam
+
+Internal UVC cam is Alcor/SMI `090c:037c`, powered by **GPIO2_PC0** (`vcc_cam`, always-on).
+Wrong pin (GPIO1_PB1 from Rock 3A) leaves the device unenumerated — guvcview then only sees RGA `/dev/video0`.

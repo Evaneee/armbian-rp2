@@ -326,19 +326,22 @@
 		regulator-boot-on;
 	};
 
+	/* USB webcam (090c:037c) power — same GPIO as vendor z96a_camera_vcc */
 	vcc_cam: regulator-vcc-cam {
 		compatible = "regulator-fixed";
 		enable-active-high;
-		gpio = <&gpio1 RK_PB1 GPIO_ACTIVE_HIGH>;
+		gpio = <&gpio2 RK_PC0 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&vcc_cam_en>;
 		regulator-name = "vcc_cam";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
 		vin-supply = <&vcc3v3_sys>;
+		regulator-always-on;
+		regulator-boot-on;
 
 		regulator-state-mem {
-			regulator-off-in-suspend;
+			regulator-on-in-suspend;
 		};
 	};
 
@@ -894,7 +897,7 @@
 	};
 	cam {
 		vcc_cam_en: vcc_cam_en {
-			rockchip,pins = <1 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>;
+			rockchip,pins = <2 RK_PC0 RK_FUNC_GPIO &pcfg_output_high>;
 		};
 	};
 
