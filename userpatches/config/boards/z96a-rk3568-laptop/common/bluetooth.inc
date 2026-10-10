@@ -79,7 +79,7 @@ function pre_customize_image__z96a_enbluetooth() {
 		"${SDCARD}/etc/default/z96a-lid-blank"
 	chroot_sdcard systemctl enable z96a-lid-blank.service
 
-	# BlueZ policy: power owned by z96a-bt (SSP-safe). LE Just Works; no SSP on this FW.
+	# BlueZ policy: power owned by z96a-bt. SSP on, Secure Connections off (FW limit).
 	if [[ -f "${SDCARD}/etc/bluetooth/main.conf" ]]; then
 		local mc="${SDCARD}/etc/bluetooth/main.conf"
 		_z96a_bt_conf_set() {
@@ -94,6 +94,8 @@ function pre_customize_image__z96a_enbluetooth() {
 		_z96a_bt_conf_set JustWorksRepairing always
 		_z96a_bt_conf_set ControllerMode dual
 		_z96a_bt_conf_set FastConnectable true
+		# RTL8821CS fw rejects Write SC Host Support (0x0c7a); SC off lets SSP work.
+		_z96a_bt_conf_set SecureConnections off
 		unset -f _z96a_bt_conf_set
 	fi
 	if [[ -f "${ov}/etc/bluetooth/main.conf.d/z96a.conf" ]]; then

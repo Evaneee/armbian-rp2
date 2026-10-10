@@ -4,11 +4,11 @@
 # btmgmt under systemd cannot epoll stdin (/dev/null -> EPERM) and hangs forever.
 # Feeding a closed pipe (`: | btmgmt ...`) makes epoll see HUP and proceed.
 #
-# Board-tested 2026-10-09 (RTL fw 0xaa8a930d):
-# - power-on with SSP set fails (hci Opcode 0x0c7a / status 0x03) → GNOME toggle dies
-# - SSP cannot be enabled while powered (status 0x03)
-# - Working: ssp off → power on → le on → bondable → pairable/discoverable
-# - Classic BR/EDR without SSP may still prompt a PIN (try 0000); LE uses Just Works/SMP
+# RTL8821CS fw 0xaa8a930d rejects HCI Write Secure Connections Host Support
+# (opcode 0x0c7a, status 0x03). The kernel sends it right after Write SSP Mode
+# whenever mgmt "sc" is on, so SSP looked broken. With SC off, SSP works and
+# classic devices pair with Just Works / numeric comparison (no PIN).
+# Fallback if SSP still fails: ssp off (legacy PIN pairing, try 0000).
 set -u
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 log() { echo "z96a-bt: $*"; }
@@ -34,7 +34,6 @@ have_ctrl() {
 	[[ "$out" == *Controller* ]]
 }
 
-# Keep adapter usable for GNOME + LE scan/pair (never enable SSP on this FW).
 apply_policy() {
 	btm 5 -i hci0 le on >/dev/null 2>&1 || true
 	btm 5 -i hci0 bondable on >/dev/null 2>&1 || true
@@ -46,39 +45,35 @@ apply_policy() {
 	timeout 3 bluetoothctl discoverable on >/dev/null 2>&1 || true
 }
 
+# $1 = on|off for SSP; SC always off (firmware cannot do it)
+power_cycle() {
+	btm 5 -i hci0 power off >/dev/null 2>&1 || true
+	sleep 1
+	# kernel rejects "sc off" while SSP is off on an SC-capable controller
+	btm 5 -i hci0 ssp "$1" >/dev/null 2>&1 || true
+	btm 5 -i hci0 sc off >/dev/null 2>&1 || true
+	btm 5 -i hci0 le on >/dev/null 2>&1 || true
+	btm 5 -i hci0 bondable on >/dev/null 2>&1 || true
+	btm 8 -i hci0 power on >/dev/null 2>&1 || true
+	sleep 1
+}
+
 bring_up() {
 	local cur
 	cur=$(cur_settings)
-
-	# Must clear SSP before power-on on this firmware
-	if [[ "$cur" == *ssp* ]] || [[ "$cur" != *powered* ]]; then
-		log "ssp off + power on + le/bondable"
-		btm 5 -i hci0 power off >/dev/null 2>&1 || true
-		sleep 1
-		btm 5 -i hci0 ssp off >/dev/null 2>&1 || true
-		btm 5 -i hci0 le on >/dev/null 2>&1 || true
-		btm 5 -i hci0 bondable on >/dev/null 2>&1 || true
-		btm 8 -i hci0 power on >/dev/null 2>&1 || true
-		sleep 1
+	if [[ "$cur" != *powered* || "$cur" != *ssp* || "$cur" == *secure-conn* ]]; then
+		log "sc off + ssp on + power on"
+		power_cycle on
+		cur=$(cur_settings)
 	fi
-
-	cur=$(cur_settings)
-	if [[ "$cur" == *powered* ]]; then
-		# If SSP snuck back on, strip it (power-cycle) or GNOME toggle will fail later
-		if [[ "$cur" == *ssp* ]]; then
-			log "clear ssp (keeps gnome toggle working)"
-			btm 5 -i hci0 power off >/dev/null 2>&1 || true
-			sleep 1
-			btm 5 -i hci0 ssp off >/dev/null 2>&1 || true
-			btm 5 -i hci0 le on >/dev/null 2>&1 || true
-			btm 5 -i hci0 bondable on >/dev/null 2>&1 || true
-			btm 8 -i hci0 power on >/dev/null 2>&1 || true
-			sleep 1
-		fi
-		apply_policy
-		return 0
+	if [[ "$cur" != *powered* ]]; then
+		log "ssp power-on failed, fallback ssp off (PIN pairing)"
+		power_cycle off
+		cur=$(cur_settings)
 	fi
-	return 1
+	[[ "$cur" == *powered* ]] || return 1
+	apply_policy
+	return 0
 }
 
 log "wait hci0"

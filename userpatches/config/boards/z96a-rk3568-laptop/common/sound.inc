@@ -14,6 +14,8 @@ function pre_customize_image__z96a_ensound() {
 		"${SDCARD}/usr/lib/systemd/user/z96a-set-pipewire-sink.service"
 	install -Dm644 "${ov}/etc/wireplumber/main.lua.d/51-z96a-rk817-stereo.lua" \
 		"${SDCARD}/etc/wireplumber/main.lua.d/51-z96a-rk817-stereo.lua"
+	install -Dm644 "${ov}/etc/wireplumber/bluetooth.lua.d/51-z96a-bt-priority.lua" \
+		"${SDCARD}/etc/wireplumber/bluetooth.lua.d/51-z96a-bt-priority.lua"
 	# Prefer stereo + Speakers; also install oneshot mixer route if present.
 	if [[ -f "${ov}/etc/systemd/system/z96a-speaker-route.service" ]]; then
 		install -Dm644 "${ov}/etc/systemd/system/z96a-speaker-route.service" \

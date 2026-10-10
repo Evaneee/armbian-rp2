@@ -1,5 +1,8 @@
 #!/bin/bash
-# Point PipeWire/Pulse default output at the RK817 speaker card (not HDMI/BT).
+# Unmute the RK817 speaker sink and set its volume at login.
+# Does NOT set-default-sink: that pins RK817 as WirePlumber's configured
+# default, so a connected Bluetooth headset would never take over. The
+# default follows priority.session (BT 3000 > RK817 2000 > HDMI 100).
 # speaker-test uses ALSA directly; browsers/video players use PipeWire.
 
 set -u
@@ -38,8 +41,7 @@ if [[ -z "$SINK" ]]; then
 fi
 
 NAME="$(pactl list sinks short 2>/dev/null | awk -v s="$SINK" '$1 == s { print $2; exit }')"
-pactl set-default-sink "$SINK"
 pactl set-sink-mute "$SINK" 0 2>/dev/null || true
 pactl set-sink-volume "$SINK" 80% 2>/dev/null || true
-log "default sink -> $SINK ($NAME)"
+log "unmuted $SINK ($NAME)"
 exit 0
