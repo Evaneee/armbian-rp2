@@ -39,10 +39,10 @@ apply_policy() {
 	btm 5 -i hci0 bondable on >/dev/null 2>&1 || true
 	btm 5 -i hci0 connectable on >/dev/null 2>&1 || true
 	btm 5 -i hci0 pairable on >/dev/null 2>&1 || true
-	# discoverable helps GNOME "visible"; timeout left to bluez default
-	btm 5 -i hci0 discov on >/dev/null 2>&1 || true
 	timeout 3 bluetoothctl pairable on >/dev/null 2>&1 || true
-	timeout 3 bluetoothctl discoverable on >/dev/null 2>&1 || true
+	# Not discoverable by default: GNOME's Bluetooth panel turns it on while
+	# open (pairing). Paired devices reconnect via page scan (connectable).
+	btm 5 -i hci0 discov off >/dev/null 2>&1 || true
 }
 
 # $1 = on|off for SSP; SC always off (firmware cannot do it)
